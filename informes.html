@@ -8,6 +8,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- html2pdf (para generar PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- date-fns para manejo de fechas (opcional pero útil) -->
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { background: #f4f7fb; color: #1a2b3c; }
@@ -15,25 +19,67 @@
         nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
         nav a:hover { border-bottom-color: #8bc34a; color: white; }
         nav a.active { color: white; border-bottom-color: #ffb74d; }
-        main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
-        h2 { margin-bottom: 2rem; font-weight: 400; }
-        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+        h2 { margin-bottom: 1.5rem; font-weight: 400; }
+        .filters-bar { background: white; border-radius: 60px; padding: 1rem 2rem; margin-bottom: 2rem; display: flex; gap: 2rem; align-items: center; flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+        .filter-group { display: flex; align-items: center; gap: 0.5rem; }
+        .filter-group label { font-weight: 600; color: #2c3e50; }
+        .filter-group select, .filter-group input { padding: 0.5rem 1rem; border: 1px solid #cbd5e0; border-radius: 40px; background: white; }
+        .btn { background: #1e3a5f; color: white; border: none; padding: 0.6rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+        .btn:hover { background: #143049; }
+        .btn-outline { background: white; color: #1e3a5f; border: 2px solid #1e3a5f; }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; }
         .chart-card { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
         .chart-card h3 { margin-bottom: 1rem; color: #1e3a5f; }
         canvas { max-height: 300px; width: 100%; }
-        .loading { text-align: center; padding: 3rem; color: #6f8a9f; }
+        .pdf-section { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .pdf-section h3 { margin-bottom: 1rem; color: #1e3a5f; }
+        .pdf-content { background: #f9fcff; border-radius: 20px; padding: 1.5rem; border: 1px solid #d4e3fd; margin: 1rem 0; }
+        .tabla-prioridad { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .tabla-prioridad th { text-align: left; font-weight: 600; color: #4a5f73; font-size: 0.8rem; text-transform: uppercase; padding-bottom: 0.6rem; }
+        .tabla-prioridad td { padding: 0.6rem 0; border-bottom: 1px solid #e9eef2; }
+        .prioridad { display: inline-block; padding: 0.2rem 1rem; border-radius: 40px; font-weight: 600; font-size: 0.75rem; min-width: 70px; text-align: center; }
+        .prioridad.alta { background: #ff6b6b20; color: #b22222; border: 1px solid #ffa5a5; }
+        .prioridad.media { background: #ffd96630; color: #8a6e2b; border: 1px solid #f7d370; }
+        .prioridad.baja { background: #a5d6a750; color: #1f6d1f; border: 1px solid #a5d6a7; }
+        .chat-container { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .chat-messages { height: 300px; overflow-y: auto; border: 1px solid #e9eef2; border-radius: 20px; padding: 1rem; margin-bottom: 1rem; background: #f9fcff; }
+        .message { margin-bottom: 1rem; padding: 0.5rem 1rem; border-radius: 20px; max-width: 80%; }
+        .user-message { background: #1e3a5f; color: white; align-self: flex-end; margin-left: auto; }
+        .bot-message { background: #e9eef2; color: #1a2b3c; }
+        .chat-input-area { display: flex; gap: 0.5rem; }
+        .chat-input-area input { flex: 1; padding: 0.8rem 1.2rem; border: 1px solid #cbd5e0; border-radius: 60px; }
         footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
     </style>
 </head>
 <body>
     <nav>
-        <a href="dashboard.html">🌍 Dashboard</a>
+        <a href="index.html">🌍 Dashboard</a>
         <a href="informes.html" class="active">📈 Informes</a>
         <a href="exceles.html">📎 Cargar CSV</a>
         <a href="admin.html">⚙️ Admin</a>
     </nav>
     <main>
         <h2>📊 Informes de monitoreo</h2>
+
+        <!-- Filtros temporales -->
+        <div class="filters-bar">
+            <div class="filter-group">
+                <label>Período:</label>
+                <select id="periodoSelect">
+                    <option value="semana" selected>Semana</option>
+                    <option value="mes">Mes</option>
+                    <option value="año">Año</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Fecha de referencia:</label>
+                <input type="date" id="fechaRef" value="2025-03-15">
+            </div>
+            <button class="btn" id="aplicarFiltro">Aplicar filtro</button>
+        </div>
+
+        <!-- Gráficos -->
         <div class="chart-grid">
             <div class="chart-card">
                 <h3>Severidad promedio por fecha</h3>
@@ -44,100 +90,318 @@
                 <canvas id="chartBar"></canvas>
             </div>
         </div>
-        <div id="loading" class="loading">Cargando datos...</div>
-        <footer>© monitoreo ácaros</footer>
+
+        <!-- Sección de PDF (informe semanal) -->
+        <div class="pdf-section">
+            <h3>📄 Informe semanal de priorización</h3>
+            <button class="btn" id="generarPDF">Generar PDF</button>
+            <div id="pdfContent" class="pdf-content">
+                <!-- El contenido se llenará dinámicamente -->
+                <p>Cargando datos...</p>
+            </div>
+        </div>
+
+        <!-- Chatbot Entomólogo -->
+        <div class="chat-container">
+            <h3>🤖 Asistente Entomólogo (Acarólogo)</h3>
+            <div id="chatMessages" class="chat-messages">
+                <div class="message bot-message">Hola, soy tu asistente especializado en ácaros. Puedo ayudarte a interpretar los datos y generar recomendaciones. ¿Qué deseas consultar?</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Escribe tu pregunta...">
+                <button class="btn" id="sendChat">Enviar</button>
+            </div>
+        </div>
+
+        <footer>© monitoreo ácaros · informes dinámicos</footer>
     </main>
+
     <script>
         (function() {
+            // ---------- CONFIGURACIÓN SUPABASE ----------
             const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+            // Elementos DOM
+            const periodoSelect = document.getElementById('periodoSelect');
+            const fechaRefInput = document.getElementById('fechaRef');
+            const btnAplicar = document.getElementById('aplicarFiltro');
+            const btnGenerarPDF = document.getElementById('generarPDF');
+            const pdfContentDiv = document.getElementById('pdfContent');
+            const chatMessages = document.getElementById('chatMessages');
+            const chatInput = document.getElementById('chatInput');
+            const btnSendChat = document.getElementById('sendChat');
+
+            // Variables globales
+            let todosMonitoreos = [];
+            let fincas = [];
             let fincasMap = new Map();
+            let chartLine, chartBar;
 
-            async function cargarDatos() {
-                // Cargar fincas para obtener nombres
-                const { data: fincas } = await supabase.from('fincas').select('*');
-                fincas.forEach(f => fincasMap.set(f.id, f.nombre));
-
-                const { data: monitoreos, error } = await supabase.from('monitoreos').select('*');
-                if (error || !monitoreos || monitoreos.length === 0) {
-                    document.getElementById('loading').innerText = 'No hay datos suficientes para mostrar gráficos.';
-                    return;
-                }
-
-                document.getElementById('loading').style.display = 'none';
-
-                // Calcular severidad por fecha
-                const fechaMap = new Map();
-                // Calcular severidad por finca
-                const fincaSev = new Map(); // finca_id -> { suma, count }
-
-                monitoreos.forEach(m => {
-                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
-                    const sev = (total / 60) * 100;
-
-                    // por fecha
-                    if (m.fecha) {
-                        if (!fechaMap.has(m.fecha)) fechaMap.set(m.fecha, { suma: 0, count: 0 });
-                        const f = fechaMap.get(m.fecha);
-                        f.suma += sev;
-                        f.count += 1;
-                    }
-
-                    // por finca
-                    if (m.finca_id) {
-                        if (!fincaSev.has(m.finca_id)) fincaSev.set(m.finca_id, { suma: 0, count: 0 });
-                        const fm = fincaSev.get(m.finca_id);
-                        fm.suma += sev;
-                        fm.count += 1;
-                    }
-                });
-
-                // Ordenar fechas cronológicamente
-                const fechasOrdenadas = Array.from(fechaMap.keys()).sort();
-                const promediosFecha = fechasOrdenadas.map(f => (fechaMap.get(f).suma / fechaMap.get(f).count).toFixed(1));
-
-                // Gráfico de línea
+            // Inicializar gráficos vacíos
+            function initCharts() {
                 const ctxLine = document.getElementById('chartLine').getContext('2d');
-                new Chart(ctxLine, {
+                chartLine = new Chart(ctxLine, {
                     type: 'line',
-                    data: {
-                        labels: fechasOrdenadas,
-                        datasets: [{
-                            label: 'Severidad promedio (%)',
-                            data: promediosFecha,
-                            borderColor: '#1e3a5f',
-                            backgroundColor: '#1e3a5f20',
-                            tension: 0.2,
-                            fill: true
-                        }]
-                    },
+                    data: { labels: [], datasets: [{ label: 'Severidad promedio (%)', data: [], borderColor: '#1e3a5f', backgroundColor: '#1e3a5f20', tension: 0.2, fill: true }] },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
-
-                // Gráfico de barras por finca
-                const fincaIds = Array.from(fincaSev.keys());
-                const nombresFincas = fincaIds.map(id => fincasMap.get(id) || `Finca ${id}`);
-                const promediosFinca = fincaIds.map(id => (fincaSev.get(id).suma / fincaSev.get(id).count).toFixed(1));
-
                 const ctxBar = document.getElementById('chartBar').getContext('2d');
-                new Chart(ctxBar, {
+                chartBar = new Chart(ctxBar, {
                     type: 'bar',
-                    data: {
-                        labels: nombresFincas,
-                        datasets: [{
-                            label: 'Severidad promedio (%)',
-                            data: promediosFinca,
-                            backgroundColor: '#3a7ca5',
-                            borderRadius: 8
-                        }]
-                    },
+                    data: { labels: [], datasets: [{ label: 'Severidad promedio (%)', data: [], backgroundColor: '#3a7ca5', borderRadius: 8 }] },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
             }
 
-            window.addEventListener('load', cargarDatos);
+            // Cargar datos iniciales
+            async function cargarDatos() {
+                const { data: fincasData } = await supabase.from('fincas').select('*');
+                fincas = fincasData || [];
+                fincas.forEach(f => fincasMap.set(f.id, f.nombre));
+
+                const { data: monitoreos, error } = await supabase.from('monitoreos').select('*');
+                if (error) console.error(error);
+                else todosMonitoreos = monitoreos || [];
+
+                // Aplicar filtro por defecto (semana actual)
+                aplicarFiltro();
+            }
+
+            // Obtener rango de fechas según período y fecha de referencia
+            function getRangoFecha(periodo, fechaRef) {
+                const date = new Date(fechaRef + 'T12:00:00'); // evitar problemas de zona horaria
+                if (periodo === 'semana') {
+                    // Semana de lunes a domingo
+                    const diaSemana = date.getDay(); // 0 domingo, 1 lunes...
+                    const diffLunes = (diaSemana === 0 ? -6 : 1 - diaSemana); // si es domingo, restar 6 para ir al lunes anterior
+                    const inicio = new Date(date);
+                    inicio.setDate(date.getDate() + diffLunes);
+                    inicio.setHours(0,0,0,0);
+                    const fin = new Date(inicio);
+                    fin.setDate(inicio.getDate() + 6);
+                    fin.setHours(23,59,59,999);
+                    return { inicio: inicio.toISOString().split('T')[0], fin: fin.toISOString().split('T')[0] };
+                } else if (periodo === 'mes') {
+                    const inicio = new Date(date.getFullYear(), date.getMonth(), 1);
+                    const fin = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+                    return { inicio: inicio.toISOString().split('T')[0], fin: fin.toISOString().split('T')[0] };
+                } else { // año
+                    const inicio = new Date(date.getFullYear(), 0, 1);
+                    const fin = new Date(date.getFullYear(), 11, 31);
+                    return { inicio: inicio.toISOString().split('T')[0], fin: fin.toISOString().split('T')[0] };
+                }
+            }
+
+            // Filtrar monitoreos por rango de fechas
+            function filtrarPorFecha(rango) {
+                return todosMonitoreos.filter(m => m.fecha && m.fecha >= rango.inicio && m.fecha <= rango.fin);
+            }
+
+            // Calcular severidad promedio por fecha (para el gráfico de línea)
+            function calcularSeveridadPorFecha(monitoreos) {
+                const fechaMap = new Map();
+                monitoreos.forEach(m => {
+                    if (!m.fecha) return;
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+                    if (!fechaMap.has(m.fecha)) fechaMap.set(m.fecha, { suma: 0, count: 0 });
+                    const d = fechaMap.get(m.fecha);
+                    d.suma += sev;
+                    d.count++;
+                });
+                const fechas = Array.from(fechaMap.keys()).sort();
+                const promedios = fechas.map(f => (fechaMap.get(f).suma / fechaMap.get(f).count).toFixed(1));
+                return { fechas, promedios };
+            }
+
+            // Calcular severidad promedio por finca
+            function calcularSeveridadPorFinca(monitoreos) {
+                const fincaSev = new Map();
+                monitoreos.forEach(m => {
+                    if (!m.finca_id) return;
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+                    if (!fincaSev.has(m.finca_id)) fincaSev.set(m.finca_id, { suma: 0, count: 0 });
+                    const f = fincaSev.get(m.finca_id);
+                    f.suma += sev;
+                    f.count++;
+                });
+                const fincaIds = Array.from(fincaSev.keys());
+                const nombres = fincaIds.map(id => fincasMap.get(id) || `Finca ${id}`);
+                const promedios = fincaIds.map(id => (fincaSev.get(id).suma / fincaSev.get(id).count).toFixed(1));
+                return { nombres, promedios };
+            }
+
+            // Actualizar gráficos
+            function actualizarGraficos(monitoreos) {
+                // Línea
+                const { fechas, promedios } = calcularSeveridadPorFecha(monitoreos);
+                chartLine.data.labels = fechas;
+                chartLine.data.datasets[0].data = promedios;
+                chartLine.update();
+
+                // Barras
+                const { nombres, promedios: promediosFinca } = calcularSeveridadPorFinca(monitoreos);
+                chartBar.data.labels = nombres;
+                chartBar.data.datasets[0].data = promediosFinca;
+                chartBar.update();
+            }
+
+            // Generar contenido para el PDF (informe semanal)
+            function generarContenidoPDF(monitoreos, rango) {
+                if (!monitoreos.length) return '<p>No hay datos en el período seleccionado.</p>';
+
+                // Agrupar por bloque (necesitamos nombre de bloque, pero no tenemos join aquí; podemos obtener bloques de la BD)
+                // Para simplificar, usaremos los monitoreos y agruparemos por bloque_id, pero necesitamos nombres de bloque.
+                // Cargaremos bloques si no están.
+                return new Promise(async (resolve) => {
+                    const { data: bloques } = await supabase.from('bloques').select('*');
+                    const bloqueMap = new Map();
+                    bloques.forEach(b => bloqueMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+
+                    // Agrupar por bloque
+                    const bloqueGrupo = new Map();
+                    monitoreos.forEach(m => {
+                        if (!m.bloque_id) return;
+                        const bloqueInfo = bloqueMap.get(m.bloque_id);
+                        if (!bloqueInfo) return;
+                        const key = `${bloqueInfo.finca_id}-${m.bloque_id}`;
+                        if (!bloqueGrupo.has(key)) {
+                            bloqueGrupo.set(key, {
+                                fincaId: bloqueInfo.finca_id,
+                                bloqueId: m.bloque_id,
+                                bloqueNombre: bloqueInfo.nombre,
+                                sumaSev: 0,
+                                count: 0
+                            });
+                        }
+                        const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                        const sev = (total / 60) * 100;
+                        const g = bloqueGrupo.get(key);
+                        g.sumaSev += sev;
+                        g.count++;
+                    });
+
+                    let html = `<h4>Informe semanal: ${rango.inicio} al ${rango.fin}</h4>`;
+                    html += `<p>Total de monitoreos: ${monitoreos.length}</p>`;
+                    html += `<table class="tabla-prioridad"><thead><tr><th>Finca</th><th>Bloque</th><th>Severidad promedio</th><th>Prioridad</th></tr></thead><tbody>`;
+
+                    const filas = [];
+                    for (let [_, g] of bloqueGrupo.entries()) {
+                        const prom = g.sumaSev / g.count;
+                        let clase = 'baja', texto = 'Baja';
+                        if (prom >= 60) { clase = 'alta'; texto = 'Crítica'; }
+                        else if (prom >= 30) { clase = 'media'; texto = 'Moderada'; }
+                        const nombreFinca = fincasMap.get(g.fincaId) || 'Desconocida';
+                        filas.push(`<tr><td>${nombreFinca}</td><td>${g.bloqueNombre}</td><td>${prom.toFixed(1)}%</td><td><span class="prioridad ${clase}">${texto}</span></td></tr>`);
+                    }
+                    html += filas.join('');
+                    html += '</tbody></table>';
+                    html += '<p><strong>Recomendación general:</strong> ' + obtenerRecomendacionGeneral(monitoreos) + '</p>';
+                    resolve(html);
+                });
+            }
+
+            // Función para obtener recomendación general basada en datos
+            function obtenerRecomendacionGeneral(monitoreos) {
+                const severidades = monitoreos.map(m => {
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    return (total / 60) * 100;
+                });
+                const promedio = severidades.reduce((a,b)=>a+b,0)/severidades.length;
+                if (promedio >= 60) return 'Nivel crítico generalizado. Se recomienda tratamiento inmediato en todas las fincas.';
+                if (promedio >= 30) return 'Nivel moderado. Monitorear y aplicar tratamientos localizados en bloques con alta incidencia.';
+                return 'Nivel bajo. Continuar monitoreo preventivo.';
+            }
+
+            // Aplicar filtro y actualizar todo
+            async function aplicarFiltro() {
+                const periodo = periodoSelect.value;
+                const fechaRef = fechaRefInput.value;
+                if (!fechaRef) return;
+                const rango = getRangoFecha(periodo, fechaRef);
+                const monitoreosFiltrados = filtrarPorFecha(rango);
+                actualizarGraficos(monitoreosFiltrados);
+
+                // Actualizar contenido del PDF (previsualización)
+                const contenido = await generarContenidoPDF(monitoreosFiltrados, rango);
+                pdfContentDiv.innerHTML = contenido;
+            }
+
+            // Generar PDF
+            async function generarPDF() {
+                const elemento = pdfContentDiv;
+                const opt = {
+                    margin:       0.5,
+                    filename:     `informe_semanal_${fechaRefInput.value}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2 },
+                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+                html2pdf().set(opt).from(elemento).save();
+            }
+
+            // Chatbot: función de respuesta simulada
+            function getBotResponse(userMsg, monitoreos) {
+                const lowerMsg = userMsg.toLowerCase();
+                if (lowerMsg.includes('hola') || lowerMsg.includes('buenos días')) {
+                    return "¡Hola! Soy tu asistente entomólogo. Puedo ayudarte con información sobre ácaros, umbrales de acción y análisis de datos.";
+                }
+                if (lowerMsg.includes('umbral') || lowerMsg.includes('acción')) {
+                    return "El umbral de acción para ácaros en hojas adultas es del 30% de incidencia. En brotes jóvenes, se recomienda actuar a partir del 20%.";
+                }
+                if (lowerMsg.includes('recomendación') || lowerMsg.includes('tratamiento')) {
+                    if (monitoreos.length === 0) return "No hay datos en el período actual para generar recomendaciones.";
+                    const rec = obtenerRecomendacionGeneral(monitoreos);
+                    return "Basado en los datos filtrados: " + rec;
+                }
+                if (lowerMsg.includes('finca') && lowerMsg.includes('bogaert')) {
+                    return "La finca Bogaert ha mostrado históricamente niveles moderados. Revisa los bloques 1 y 2 donde se concentra la mayor incidencia.";
+                }
+                if (lowerMsg.includes('informe')) {
+                    return "Puedes generar el informe PDF con el botón de arriba. ¿Necesitas ayuda para interpretarlo?";
+                }
+                // Respuesta por defecto
+                return "Entendido. Si necesitas información específica, pregunta por umbrales, recomendaciones, o alguna finca en particular.";
+            }
+
+            // Enviar mensaje del chat
+            function enviarMensaje() {
+                const texto = chatInput.value.trim();
+                if (!texto) return;
+                // Añadir mensaje del usuario
+                const userDiv = document.createElement('div');
+                userDiv.classList.add('message', 'user-message');
+                userDiv.textContent = texto;
+                chatMessages.appendChild(userDiv);
+
+                // Obtener respuesta del bot
+                const periodo = periodoSelect.value;
+                const fechaRef = fechaRefInput.value;
+                const rango = getRangoFecha(periodo, fechaRef);
+                const monitoreosFiltrados = filtrarPorFecha(rango);
+                const respuesta = getBotResponse(texto, monitoreosFiltrados);
+
+                const botDiv = document.createElement('div');
+                botDiv.classList.add('message', 'bot-message');
+                botDiv.textContent = respuesta;
+                chatMessages.appendChild(botDiv);
+
+                chatInput.value = '';
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            // Event listeners
+            btnAplicar.addEventListener('click', aplicarFiltro);
+            btnGenerarPDF.addEventListener('click', generarPDF);
+            btnSendChat.addEventListener('click', enviarMensaje);
+            chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') enviarMensaje(); });
+
+            // Inicializar
+            initCharts();
+            cargarDatos();
         })();
     </script>
 </body>
