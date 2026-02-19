@@ -11,7 +11,7 @@
     <!-- html2pdf -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        /* (mantener los mismos estilos que antes, pero añadimos algunos) */
+        /* (Mantén los mismos estilos que antes, no los repito por brevedad) */
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { background: #f4f7fb; color: #1a2b3c; }
         nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
@@ -104,10 +104,10 @@
         <div class="chat-container">
             <h3>🤖 Asistente Entomólogo (con IA)</h3>
             <div id="chatMessages" class="chat-messages">
-                <div class="message bot-message">Hola, soy tu asistente especializado en ácaros. Puedo ayudarte a interpretar los datos y generar recomendaciones. ¿Qué deseas consultar?</div>
+                <div class="message bot-message">Hola, soy tu asistente especializado en ácaros. Puedo ayudarte a interpretar los datos y recomendar qué campos aplicar. ¿Qué deseas consultar?</div>
             </div>
             <div class="chat-input-area">
-                <input type="text" id="chatInput" placeholder="Escribe tu pregunta...">
+                <input type="text" id="chatInput" placeholder="Ej: ¿Qué bloques debo tratar esta semana?">
                 <button class="btn" id="sendChat">Enviar</button>
             </div>
         </div>
@@ -120,7 +120,9 @@
             // ---------- CONFIGURACIÓN ----------
             const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
-            const OPENAI_API_KEY = 'sk-90ff0598415446b298d5c4c911a80404'; // ⚠️ Expuesta en cliente, no recomendado para producción
+            // ⚠️ Para producción, usa una función serverless; aquí usamos un proxy público para evitar CORS (solo pruebas)
+            const OPENAI_API_KEY = 'sk-90ff0598415446b298d5c4c911a80404';
+            const USE_PROXY = true; // Cambia a false si implementas tu propia API
 
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -157,29 +159,26 @@
                 });
             }
 
-            // Cargar datos iniciales
+            // Cargar datos iniciales (esperar a que todo esté listo)
             async function cargarDatos() {
-                // Cargar fincas
-                const { data: fincasData } = await supabase.from('fincas').select('*');
-                fincas = fincasData || [];
-                fincas.forEach(f => fincasMap.set(f.id, f.nombre));
-
-                // Cargar bloques
-                const { data: bloquesData } = await supabase.from('bloques').select('*');
-                if (bloquesData) {
-                    bloquesData.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
-                }
-
-                // Cargar monitoreos
-                const { data: monitoreos, error } = await supabase.from('monitoreos').select('*');
-                if (error) console.error(error);
-                else todosMonitoreos = monitoreos || [];
-
-                // Aplicar filtro por defecto
+                await Promise.all([
+                    supabase.from('fincas').select('*').then(({data}) => {
+                        fincas = data || [];
+                        fincasMap.clear();
+                        fincas.forEach(f => fincasMap.set(f.id, f.nombre));
+                    }),
+                    supabase.from('bloques').select('*').then(({data}) => {
+                        bloquesMap.clear();
+                        if (data) data.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+                    }),
+                    supabase.from('monitoreos').select('*').then(({data, error}) => {
+                        if (!error) todosMonitoreos = data || [];
+                    })
+                ]);
                 aplicarFiltro();
             }
 
-            // Obtener rango de fechas según período
+            // Obtener rango de fechas
             function getRangoFecha(periodo, fechaRef) {
                 const date = new Date(fechaRef + 'T12:00:00');
                 if (periodo === 'semana') {
@@ -196,7 +195,7 @@
                     const inicio = new Date(date.getFullYear(), date.getMonth(), 1);
                     const fin = new Date(date.getFullYear(), date.getMonth() + 1, 0);
                     return { inicio: inicio.toISOString().split('T')[0], fin: fin.toISOString().split('T')[0] };
-                } else { // año
+                } else {
                     const inicio = new Date(date.getFullYear(), 0, 1);
                     const fin = new Date(date.getFullYear(), 11, 31);
                     return { inicio: inicio.toISOString().split('T')[0], fin: fin.toISOString().split('T')[0] };
@@ -256,19 +255,25 @@
                 chartBar.update();
             }
 
-            // Generar contenido para el PDF (agrupado por finca/bloque)
+            // Generar contenido del PDF con tabla completa
             async function generarContenidoPDF(monitoreos, rango) {
                 if (!monitoreos.length) return '<p>No hay datos en el período seleccionado.</p>';
 
-                // Agrupar por finca y bloque (si existe)
+                // Si no tenemos bloques cargados, los volvemos a pedir (por si acaso)
+                if (bloquesMap.size === 0) {
+                    const { data } = await supabase.from('bloques').select('*');
+                    if (data) data.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+                }
+
+                // Agrupar por finca y bloque
                 const grupos = new Map(); // clave: "fincaId-bloqueId" o "fincaId-sinBloque"
 
                 for (const m of monitoreos) {
                     const fincaId = m.finca_id;
-                    if (!fincaId) continue; // ignorar monitoreos sin finca
+                    if (!fincaId) continue;
                     const bloqueId = m.bloque_id;
-                    const key = bloqueId ? `B-${fincaId}-${bloqueId}` : `F-${fincaId}`;
-                    
+                    const key = bloqueId ? `${fincaId}-${bloqueId}` : `${fincaId}-null`;
+
                     if (!grupos.has(key)) {
                         let nombreGrupo;
                         if (bloqueId) {
@@ -341,7 +346,7 @@
                 html2pdf().set(opt).from(elemento).save();
             }
 
-            // ---------- CHATBOT CON OPENAI ----------
+            // ---------- CHATBOT CON OPENAI (con proxy para evitar CORS) ----------
             async function enviarMensaje() {
                 const texto = chatInput.value.trim();
                 if (!texto) return;
@@ -365,12 +370,11 @@
                 const rango = getRangoFecha(periodo, fechaRef);
                 const monitoreosFiltrados = filtrarPorFecha(rango);
 
-                // Construir resumen de datos para el prompt
-                const resumen = construirResumen(monitoreosFiltrados);
+                // Construir resumen detallado (incluye tabla de prioridades)
+                const resumen = await construirResumenConTabla(monitoreosFiltrados, rango);
 
                 try {
                     const respuesta = await llamarOpenAI(texto, resumen);
-                    // Reemplazar "Escribiendo..." con la respuesta
                     typingDiv.remove();
                     const botDiv = document.createElement('div');
                     botDiv.classList.add('message', 'bot-message');
@@ -389,33 +393,67 @@
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
 
-            function construirResumen(monitoreos) {
+            async function construirResumenConTabla(monitoreos, rango) {
                 if (monitoreos.length === 0) return 'No hay datos en el período seleccionado.';
-                const porFinca = calcularSeveridadPorFinca(monitoreos);
-                let resumen = `Datos de monitoreo (${monitoreos.length} registros):\n`;
-                for (let i = 0; i < porFinca.nombres.length; i++) {
-                    resumen += `- ${porFinca.nombres[i]}: ${porFinca.promedios[i]}% severidad promedio\n`;
+                // Reutilizamos la misma lógica de agrupación que en el PDF
+                const grupos = new Map();
+                for (const m of monitoreos) {
+                    const fincaId = m.finca_id;
+                    if (!fincaId) continue;
+                    const bloqueId = m.bloque_id;
+                    const key = bloqueId ? `${fincaId}-${bloqueId}` : `${fincaId}-null`;
+                    if (!grupos.has(key)) {
+                        let nombreGrupo;
+                        if (bloqueId) {
+                            const bloque = bloquesMap.get(bloqueId);
+                            nombreGrupo = bloque ? `${bloque.nombre} (${fincasMap.get(fincaId)})` : `Bloque ${bloqueId} (${fincasMap.get(fincaId)})`;
+                        } else {
+                            nombreGrupo = `${fincasMap.get(fincaId)} (sin bloque)`;
+                        }
+                        grupos.set(key, { nombre: nombreGrupo, sumaSev: 0, count: 0 });
+                    }
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+                    const g = grupos.get(key);
+                    g.sumaSev += sev;
+                    g.count++;
                 }
-                resumen += `Recomendación general: ${obtenerRecomendacionGeneral(monitoreos)}`;
-                return resumen;
+
+                let tablaTexto = `Resumen de monitoreo del período ${rango.inicio} al ${rango.fin}:\n`;
+                for (let [_, g] of grupos.entries()) {
+                    const prom = g.sumaSev / g.count;
+                    let prioridad = 'Baja';
+                    if (prom >= 60) prioridad = 'Crítica';
+                    else if (prom >= 30) prioridad = 'Moderada';
+                    tablaTexto += `- ${g.nombre}: ${prom.toFixed(1)}% (Prioridad ${prioridad})\n`;
+                }
+                tablaTexto += `Recomendación general: ${obtenerRecomendacionGeneral(monitoreos)}`;
+                return tablaTexto;
             }
 
             async function llamarOpenAI(pregunta, contexto) {
                 const messages = [
-                    { role: 'system', content: 'Eres un entomólogo experto en ácaros en cultivos agrícolas. Respondes preguntas sobre monitoreo, umbrales de acción, recomendaciones de manejo integrado de plagas. Usas un tono profesional y amable. Te proporcionarán datos de monitoreo actuales para contextualizar tus respuestas.' },
+                    { role: 'system', content: 'Eres un entomólogo experto en ácaros en cultivos agrícolas. Tu tarea es ayudar a decidir qué campos (bloques) deben ser tratados, basándote en los datos de monitoreo. Usa la tabla de prioridades para recomendar acciones específicas. Responde de manera clara y concisa.' },
                     { role: 'user', content: `Contexto de monitoreo actual:\n${contexto}\n\nPregunta: ${pregunta}` }
                 ];
 
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                // Si usamos proxy público (solo para pruebas)
+                let url = 'https://api.openai.com/v1/chat/completions';
+                if (USE_PROXY) {
+                    url = 'https://cors-anywhere.herokuapp.com/' + url;
+                }
+
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${OPENAI_API_KEY}`
+                        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                        'Origin': window.location.origin // necesario para algunos proxies
                     },
                     body: JSON.stringify({
-                        model: 'gpt-3.5-turbo', // o 'gpt-4' si tienes acceso
+                        model: 'gpt-3.5-turbo',
                         messages: messages,
-                        max_tokens: 300,
+                        max_tokens: 400,
                         temperature: 0.7
                     })
                 });
