@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informes · Monitoreo Agrícola</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f4f7fb; color: #1a2b3c; }
+        nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
+        nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
+        nav a:hover { border-bottom-color: #8bc34a; color: white; }
+        nav a.active { color: white; border-bottom-color: #ffb74d; }
+        main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        h2 { margin-bottom: 2rem; font-weight: 400; }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .chart-card { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .chart-card h3 { margin-bottom: 1rem; color: #1e3a5f; }
+        canvas { max-height: 300px; width: 100%; }
+        .loading { text-align: center; padding: 3rem; color: #6f8a9f; }
+        footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="dashboard.html">🌍 Dashboard</a>
+        <a href="informes.html" class="active">📈 Informes</a>
+        <a href="exceles.html">📎 Cargar CSV</a>
+        <a href="admin.html">⚙️ Admin</a>
+    </nav>
+    <main>
+        <h2>📊 Informes de monitoreo</h2>
+        <div class="chart-grid">
+            <div class="chart-card">
+                <h3>Severidad promedio por fecha</h3>
+                <canvas id="chartLine"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Severidad promedio por finca</h3>
+                <canvas id="chartBar"></canvas>
+            </div>
+        </div>
+        <div id="loading" class="loading">Cargando datos...</div>
+        <footer>© monitoreo ácaros</footer>
+    </main>
+    <script>
+        (function() {
+            const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            let fincasMap = new Map();
+
+            async function cargarDatos() {
+                // Cargar fincas para obtener nombres
+                const { data: fincas } = await supabase.from('fincas').select('*');
+                fincas.forEach(f => fincasMap.set(f.id, f.nombre));
+
+                const { data: monitoreos, error } = await supabase.from('monitoreos').select('*');
+                if (error || !monitoreos || monitoreos.length === 0) {
+                    document.getElementById('loading').innerText = 'No hay datos suficientes para mostrar gráficos.';
+                    return;
+                }
+
+                document.getElementById('loading').style.display = 'none';
+
+                // Calcular severidad por fecha
+                const fechaMap = new Map();
+                // Calcular severidad por finca
+                const fincaSev = new Map(); // finca_id -> { suma, count }
+
+                monitoreos.forEach(m => {
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+
+                    // por fecha
+                    if (m.fecha) {
+                        if (!fechaMap.has(m.fecha)) fechaMap.set(m.fecha, { suma: 0, count: 0 });
+                        const f = fechaMap.get(m.fecha);
+                        f.suma += sev;
+                        f.count += 1;
+                    }
+
+                    // por finca
+                    if (m.finca_id) {
+                        if (!fincaSev.has(m.finca_id)) fincaSev.set(m.finca_id, { suma: 0, count: 0 });
+                        const fm = fincaSev.get(m.finca_id);
+                        fm.suma += sev;
+                        fm.count += 1;
+                    }
+                });
+
+                // Ordenar fechas cronológicamente
+                const fechasOrdenadas = Array.from(fechaMap.keys()).sort();
+                const promediosFecha = fechasOrdenadas.map(f => (fechaMap.get(f).suma / fechaMap.get(f).count).toFixed(1));
+
+                // Gráfico de línea
+                const ctxLine = document.getElementById('chartLine').getContext('2d');
+                new Chart(ctxLine, {
+                    type: 'line',
+                    data: {
+                        labels: fechasOrdenadas,
+                        datasets: [{
+                            label: 'Severidad promedio (%)',
+                            data: promediosFecha,
+                            borderColor: '#1e3a5f',
+                            backgroundColor: '#1e3a5f20',
+                            tension: 0.2,
+                            fill: true
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                // Gráfico de barras por finca
+                const fincaIds = Array.from(fincaSev.keys());
+                const nombresFincas = fincaIds.map(id => fincasMap.get(id) || `Finca ${id}`);
+                const promediosFinca = fincaIds.map(id => (fincaSev.get(id).suma / fincaSev.get(id).count).toFixed(1));
+
+                const ctxBar = document.getElementById('chartBar').getContext('2d');
+                new Chart(ctxBar, {
+                    type: 'bar',
+                    data: {
+                        labels: nombresFincas,
+                        datasets: [{
+                            label: 'Severidad promedio (%)',
+                            data: promediosFinca,
+                            backgroundColor: '#3a7ca5',
+                            borderRadius: 8
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            window.addEventListener('load', cargarDatos);
+        })();
+    </script>
+</body>
+</html>
