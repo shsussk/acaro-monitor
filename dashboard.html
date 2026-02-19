@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard · Monitoreo Agrícola</title>
+    <!-- Leaflet (CSS + JS) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f4f7fb; color: #1a2b3c; }
+        nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; transition: 0.2s; }
+        nav a:hover { color: white; border-bottom-color: #8bc34a; }
+        nav a.active { color: white; border-bottom-color: #ffb74d; }
+        main { padding: 2rem; max-width: 1600px; margin: 0 auto; }
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 360px; gap: 1.5rem; margin-top: 1.5rem; }
+        .map-container { background: white; border-radius: 24px; box-shadow: 0 12px 30px rgba(0,20,30,0.1); overflow: hidden; height: 500px; }
+        #map { height: 100%; width: 100%; }
+        .filters-card, .summary-card { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,20,30,0.06); margin-bottom: 1.5rem; }
+        .filters-card h3, .summary-card h3 { margin-bottom: 1.2rem; font-weight: 500; color: #1e3a5f; display: flex; align-items: center; gap: 0.5rem; }
+        .filter-group { margin-bottom: 1.2rem; }
+        .filter-group label { display: block; font-size: 0.9rem; font-weight: 600; color: #2c3e50; margin-bottom: 0.3rem; }
+        .filter-group select, .filter-group input { width: 100%; padding: 0.6rem 1rem; border: 1px solid #cbd5e0; border-radius: 40px; font-size: 0.95rem; background: #f9fcff; }
+        .btn { background: #1e3a5f; color: white; border: none; padding: 0.7rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+        .btn:hover { background: #143049; }
+        .tabla-bloques { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+        .tabla-bloques th { text-align: left; font-weight: 600; color: #4a5f73; font-size: 0.8rem; text-transform: uppercase; padding-bottom: 0.6rem; }
+        .tabla-bloques td { padding: 0.6rem 0; border-bottom: 1px solid #e9eef2; }
+        .prioridad { display: inline-block; padding: 0.2rem 1rem; border-radius: 40px; font-weight: 600; font-size: 0.75rem; min-width: 70px; text-align: center; }
+        .prioridad.alta { background: #ff6b6b20; color: #b22222; border: 1px solid #ffa5a5; }
+        .prioridad.media { background: #ffd96630; color: #8a6e2b; border: 1px solid #f7d370; }
+        .prioridad.baja { background: #a5d6a750; color: #1f6d1f; border: 1px solid #a5d6a7; }
+        footer { margin-top: 3rem; text-align: center; color: #6f8a9f; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="dashboard.html" class="active">🌍 Dashboard</a>
+        <a href="informes.html">📈 Informes</a>
+        <a href="exceles.html">📎 Cargar CSV</a>
+        <a href="admin.html">⚙️ Admin</a>
+    </nav>
+    <main>
+        <h2 style="font-weight: 400;">Monitoreo de ácaros · <span style="font-weight: 600;">mapa dinámico</span></h2>
+        <div class="dashboard-grid">
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+            <div>
+                <div class="filters-card">
+                    <h3>🔍 Filtros</h3>
+                    <div class="filter-group">
+                        <label>Finca</label>
+                        <select id="filtroFinca">
+                            <option value="">Todas las fincas</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Bloque</label>
+                        <select id="filtroBloque">
+                            <option value="">Todos los bloques</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Fecha inicial</label>
+                        <input type="date" id="filtroFechaIni">
+                    </div>
+                    <div class="filter-group">
+                        <label>Fecha final</label>
+                        <input type="date" id="filtroFechaFin">
+                    </div>
+                    <button class="btn" id="btnAplicarFiltros">Aplicar filtros</button>
+                </div>
+                <div class="summary-card">
+                    <h3>📋 Resumen por bloque</h3>
+                    <table class="tabla-bloques">
+                        <thead><tr><th>Bloque</th><th>Severidad</th><th>Prioridad</th></tr></thead>
+                        <tbody id="tablaResumen"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <footer>© monitoreo ácaros · datos en Supabase · OSM Leaflet</footer>
+    </main>
+
+    <script>
+        (function() {
+            // ---------- CONFIGURACIÓN SUPABASE ----------
+            const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            // ---------- DATOS EMBEBIDOS: GEOJSON FINCAS ----------
+            const FINCAS_GEOJSON = {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.26320108864334,19.64434946440664],[-71.26441393277675,19.64452910378094],[-71.26461668665485,19.64415438989961],[-71.26474476702812,19.64366871328321],[-71.26473971723651,19.64360839527945],[-71.26499614329069,19.64297667215612],[-71.26517472788852,19.64212877777249],[-71.26517104222829,19.64209238502307],[-71.26552856965867,19.64122498212306],[-71.26572153451353,19.64042649835662],[-71.26571538712119,19.64037768922962],[-71.26598276763433,19.63957269722304],[-71.26600725945136,19.63946562729482],[-71.26625113613188,19.63867385475985],[-71.26673452886916,19.63759428573448],[-71.26673979367138,19.63755464140202],[-71.26694755929509,19.63678412412781],[-71.2669546768301,19.63675921563944],[-71.2671618043243,19.63615923981623],[-71.2671658864698,19.63612339849817],[-71.26748719343999,19.63543430599833],[-71.26749596091692,19.63542314307507],[-71.26776108257748,19.63471479124659],[-71.26747636931316,19.63453359385707],[-71.26726107048715,19.63454276195323],[-71.26693799824663,19.63486854401387],[-71.26656864887362,19.63517316608537],[-71.26616675263438,19.63561219043521],[-71.26565107986625,19.63618653140984],[-71.26558662209976,19.63622243613634],[-71.26499303887607,19.63683004717705],[-71.26460047489142,19.63744384810082],[-71.26402086231542,19.63783163063991],[-71.26372454979379,19.63784236457663],[-71.26333495227888,19.6372205533867],[-71.2628458354338,19.63666133937308],[-71.26282143197656,19.63663656939825],[-71.26234131276628,19.63601009562423],[-71.26186194874809,19.63534942267295],[-71.26181753432385,19.63529427693065],[-71.261483245193,19.63473181841387],[-71.26146212638164,19.63470005683867],[-71.26120784252555,19.63447063123814],[-71.26100119892509,19.6344919937692],[-71.26063756839565,19.63459612984924],[-71.2605717297015,19.63460624834099],[-71.26003501263672,19.63478324791053],[-71.25995843808194,19.63478275780031],[-71.25947665218226,19.63488701385844],[-71.25884111775551,19.63502732402368],[-71.25829731591865,19.63510348056948],[-71.25769083356283,19.6352013146824],[-71.25702554499853,19.63534423416002],[-71.25642147595734,19.63543288753666],[-71.2559248554621,19.63556878080209],[-71.25555523607716,19.63560073487333],[-71.25532091128767,19.635804349505],[-71.25594478550924,19.63610930336418],[-71.25675769872018,19.6364754233958],[-71.25726793285496,19.63669874905826],[-71.25787749991892,19.63689666665912],[-71.25856514357889,19.63720362755476],[-71.25923522308057,19.63750113450144],[-71.25999353963172,19.63778915879249],[-71.26102845936893,19.63818825967842],[-71.26172764130717,19.63842749895399],[-71.26226230089242,19.63887103581286],[-71.26207054826598,19.63940752339539],[-71.26184309218704,19.64019177040224],[-71.26139421739576,19.64171989940367],[-71.26093313282884,19.64276565577241],[-71.26045374606879,19.64423095618653],[-71.26000078078815,19.64596078035163],[-71.26320108864334,19.64434946440664]]]},"properties":{"name":"Bogaert"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.29395573124114,19.64987834258161],[-71.29558228472747,19.64886235287705],[-71.29723449366597,19.64787495719695],[-71.29688728641206,19.6476575131538],[-71.29634539747467,19.64742480012269],[-71.29602997705838,19.64729977864944],[-71.29572898754523,19.64746689595442],[-71.29507892136839,19.64784980324108],[-71.29486068263142,19.64798734712333],[-71.29451895830573,19.64824273240744],[-71.2941120765353,19.64856611445555],[-71.29370196524063,19.64883891662841],[-71.29340167547005,19.64903853754329],[-71.29333447120216,19.64908203347969],[-71.29395573124114,19.64987834258161]]]},"properties":{"name":"Cementerio"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.29596360035293,19.64721859066722],[-71.29334262993008,19.64896447050895],[-71.29407946499765,19.65009227401897],[-71.29493924218876,19.65100883069667],[-71.2954652876343,19.65140074597868],[-71.2963559506424,19.65176525478595],[-71.297144440384,19.65202641617703],[-71.29744415322429,19.65211220592361],[-71.29785356632698,19.65165448804845],[-71.29814532751611,19.65160689982803],[-71.29862725903273,19.65162278608543],[-71.29872229439134,19.65179038066456],[-71.29859949621512,19.65217535146722],[-71.29856071382756,19.65237973531416],[-71.29933579621554,19.65311018725977],[-71.29965505079329,19.65353595817493],[-71.30011965936725,19.65424891215474],[-71.30033908924447,19.65407892122164],[-71.30059116771403,19.65363631464363],[-71.30079116672064,19.65343735330503],[-71.30131710403019,19.65349079023805],[-71.30182332519044,19.65351556213091],[-71.30198827149914,19.65339562916934],[-71.30230400203112,19.6529499463874],[-71.30258540181578,19.65244581089161],[-71.30303108960058,19.65172636065567],[-71.30336494113386,19.65115351974004],[-71.30334533483516,19.65066821410501],[-71.29596360035293,19.64721859066722]]]},"properties":{"name":"Baez"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.2964681433784,19.64588586105706],[-71.29696095339587,19.64380204410065],[-71.29703734661675,19.64371466953382],[-71.29692912449069,19.64384559050489],[-71.29680952869276,19.64397523668706],[-71.29683370008418,19.64426160324288],[-71.29655049992206,19.64452145257905],[-71.29639588394889,19.64480499750982],[-71.29631223669446,19.64507917648156],[-71.2964577967521,19.64535728807983],[-71.2965421260306,19.64555068810713],[-71.2963062301541,19.64607590345809],[-71.2957937586909,19.646383366662],[-71.29582952124919,19.64646769134259],[-71.29598847574132,19.64653209777415],[-71.2961584093271,19.64665214356636],[-71.29657340361858,19.64683473935265],[-71.29658462112438,19.64683510718112],[-71.29714401616044,19.6471173312194],[-71.29755652626605,19.64725427969858],[-71.29811000192781,19.64746374521635],[-71.29849671068946,19.64768118315288],[-71.29920131086577,19.64789313605342],[-71.29923427874121,19.64790487699281],[-71.29947191165202,19.64816826101757],[-71.29949248451679,19.64841937042123],[-71.29968453048117,19.64877276013431],[-71.29985611363493,19.64891851089175],[-71.30018148861711,19.64907636179391],[-71.3004627565679,19.64929109462277],[-71.30059668600154,19.6493537938545],[-71.30086257155574,19.64950812871538],[-71.30115624499611,19.64963152763774],[-71.30151909514488,19.64972733587597],[-71.30187503052133,19.64991678566232],[-71.30243864890295,19.65020302940046],[-71.30290871885417,19.65039964726362],[-71.30319893240662,19.65055289069879],[-71.30336396844599,19.65056721314686],[-71.30343532410444,19.65045303699371],[-71.3035499648075,19.65004560731664],[-71.30371332375479,19.6494134569218],[-71.30391439731926,19.6487031458868],[-71.30402707326661,19.64823885175662],[-71.30405098722397,19.64796687190289],[-71.30414866187985,19.64737309314022],[-71.30391564796776,19.6471730216573],[-71.30342599495195,19.6467897481823],[-71.30282693562593,19.64647552994019],[-71.30242259570555,19.64616310175531],[-71.30236400403503,19.64597690800623],[-71.30249819866566,19.64568042347775],[-71.30281073465017,19.64524770350433],[-71.30314826262327,19.64461950388981],[-71.30353822595569,19.6441032523832],[-71.30390763072093,19.64365768056134],[-71.30415864326652,19.64320338733113],[-71.30409969283015,19.642914546232],[-71.3036428572589,19.64284131602662],[-71.30318034889605,19.64281633969336],[-71.30269669515347,19.6427060471733],[-71.30244596026273,19.6425633584465],[-71.3021573860116,19.64263576148359],[-71.30186806424767,19.6427687293843],[-71.3014792425982,19.64288577370552],[-71.30086499204829,19.6428554435761],[-71.30037718292377,19.64270369536177],[-71.30003342771573,19.64283827309138],[-71.29939178526855,19.64305839261981],[-71.29865042483193,19.64273844019338],[-71.2972923040189,19.64252029495501],[-71.2964681433784,19.64588586105706]]]},"properties":{"name":"Baez2"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.29786125986199,19.65577175439741],[-71.2981155664902,19.65541566871631],[-71.29844088668744,19.65485564182722],[-71.298740496749,19.65437366390413],[-71.29865258346989,19.65415679663806],[-71.2985028437767,19.65396875769517],[-71.2984260301472,19.65388186926639],[-71.29847561724975,19.65379828529552],[-71.2985762882663,19.65376765653479],[-71.2984440706059,19.65356170632448],[-71.2983075875745,19.65329084535955],[-71.29815602089013,19.65305107489589],[-71.29791270942968,19.65275846090913],[-71.29767219431915,19.65258453105274],[-71.29730540330006,19.65241570114934],[-71.29688500474998,19.65222176984959],[-71.2964842337605,19.65208463909966],[-71.29611745554172,19.65195063124588],[-71.29565864176006,19.65172571366794],[-71.29528122963524,19.65158579390632],[-71.29505170764692,19.65144993265532],[-71.29484423097355,19.65123550971115],[-71.29462029199513,19.65104214755561],[-71.29439299057006,19.65076435687052],[-71.29411248853707,19.65045221843229],[-71.29395936722428,19.65033101007467],[-71.2938201636323,19.65038340379066],[-71.29366270315265,19.65056376991452],[-71.2935338739553,19.6507728049654],[-71.29342445895942,19.6510509525171],[-71.29340908395648,19.65107802793023],[-71.29322168400887,19.6513355607979],[-71.29298418212659,19.65154288763571],[-71.2928205270851,19.65178428690742],[-71.29266369493142,19.65198259469412],[-71.29242893093357,19.65226600369197],[-71.29442928792776,19.65375185314424],[-71.29786125986199,19.65577175439741]]]},"properties":{"name":"Fernandez"}},{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-71.32916265119692,19.64566594909058],[-71.32912046166147,19.64548268485472],[-71.3289396025035,19.64516013396066],[-71.32870545267899,19.64476814439631],[-71.32850703005805,19.64439283825695],[-71.32830965659029,19.64406776821232],[-71.32800386049136,19.64373633692825],[-71.32771920708487,19.64329677387162],[-71.32741727662611,19.64277720867076],[-71.32710642954498,19.64238483987077],[-71.32676614190108,19.64214788112317],[-71.32642969732014,19.64184168410948],[-71.32612469734954,19.6414657627857],[-71.32575763886709,19.64107641200053],[-71.32552957833457,19.64083102657654],[-71.32557927099155,19.64096932837503],[-71.32561149292596,19.64114174442168],[-71.32555448501682,19.64139581697765],[-71.32560163635186,19.64178898655481],[-71.32558981442835,19.64226549847229],[-71.32557392993046,19.6428138783902],[-71.32554527163484,19.64316952632727],[-71.325384333244,19.64344225132553],[-71.32518395401137,19.64373153093836],[-71.3251660863772,19.64391957732077],[-71.32501129700341,19.64410800818172],[-71.32464799046272,19.64406106301113],[-71.32454379711152,19.64415485717632],[-71.32447624414093,19.6444073733208],[-71.32444343420828,19.64480055812005],[-71.32429942838854,19.64510952298005],[-71.32419813910548,19.6453336583182],[-71.32400990417756,19.64566777981767],[-71.3238002681742,19.64593076594068],[-71.32367382740935,19.64605601419361],[-71.32357098467611,19.64613435311356],[-71.32367488855083,19.64638145369219],[-71.3237114287011,19.64690173822042],[-71.32354480193528,19.6471766950981],[-71.32341255470429,19.64733376698759],[-71.32316727180745,19.64747505267589],[-71.32325518280301,19.64763620359393],[-71.32356514126433,19.64770740730219],[-71.3241010857781,19.64777896738335],[-71.32506276992561,19.64820742037051],[-71.3256991693785,19.64845816634321],[-71.326454421017,19.64868116879812],[-71.3272861689637,19.64888181794874],[-71.32895105037787,19.64934765638697],[-71.32916265119692,19.64566594909058]]]},"properties":{"name":"Florida"}}]};
+
+            // ---------- ESTADO GLOBAL ----------
+            let map, markersLayer;
+            let todosMonitoreos = [];
+            let fincas = [], bloques = [];
+            let fincasMap = new Map();
+            let bloquesPorFinca = new Map();
+
+            const filtroFinca = document.getElementById('filtroFinca');
+            const filtroBloque = document.getElementById('filtroBloque');
+            const filtroFechaIni = document.getElementById('filtroFechaIni');
+            const filtroFechaFin = document.getElementById('filtroFechaFin');
+            const btnAplicar = document.getElementById('btnAplicarFiltros');
+            const tablaBody = document.getElementById('tablaResumen');
+
+            // ---------- INICIALIZAR MAPA ----------
+            function initMap() {
+                map = L.map('map').setView([19.65, -71.28], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+                markersLayer = L.layerGroup().addTo(map);
+                L.geoJSON(FINCAS_GEOJSON, {
+                    style: { color: '#2b5f8a', weight: 2, fillOpacity: 0.15, fillColor: '#6ba0c0' },
+                    onEachFeature: (feature, layer) => {
+                        if (feature.properties.name) layer.bindPopup(`<b>${feature.properties.name}</b>`);
+                    }
+                }).addTo(map);
+            }
+
+            // ---------- CARGAR CATÁLOGOS ----------
+            async function cargarCatalogos() {
+                try {
+                    const { data: fincasData } = await supabase.from('fincas').select('*');
+                    fincas = fincasData || [];
+                    fincas.forEach(f => fincasMap.set(f.id, f.nombre));
+                    filtroFinca.innerHTML = '<option value="">Todas las fincas</option>';
+                    fincas.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f.id;
+                        opt.textContent = f.nombre;
+                        filtroFinca.appendChild(opt);
+                    });
+
+                    const { data: bloquesData } = await supabase.from('bloques').select('*');
+                    bloques = bloquesData || [];
+                    bloques.forEach(b => {
+                        if (!bloquesPorFinca.has(b.finca_id)) bloquesPorFinca.set(b.finca_id, []);
+                        bloquesPorFinca.get(b.finca_id).push(b);
+                    });
+
+                    filtroFinca.addEventListener('change', () => {
+                        const fincaId = filtroFinca.value ? parseInt(filtroFinca.value) : null;
+                        filtroBloque.innerHTML = '<option value="">Todos los bloques</option>';
+                        if (fincaId && bloquesPorFinca.has(fincaId)) {
+                            bloquesPorFinca.get(fincaId).forEach(b => {
+                                const opt = document.createElement('option');
+                                opt.value = b.id;
+                                opt.textContent = b.nombre;
+                                filtroBloque.appendChild(opt);
+                            });
+                        }
+                    });
+                } catch (e) { console.warn('Error cargando catálogos', e); }
+            }
+
+            // ---------- CARGAR MONITOREOS ----------
+            async function cargarMonitoreos() {
+                try {
+                    const { data, error } = await supabase.from('monitoreos').select('*');
+                    if (error) throw error;
+                    todosMonitoreos = data || [];
+                } catch (e) {
+                    console.warn('Error cargando monitoreos', e);
+                    todosMonitoreos = [];
+                } finally {
+                    aplicarFiltros();
+                }
+            }
+
+            // ---------- FILTRADO ----------
+            function aplicarFiltros() {
+                let lista = [...todosMonitoreos];
+                const fincaId = filtroFinca.value ? parseInt(filtroFinca.value) : null;
+                const bloqueId = filtroBloque.value ? parseInt(filtroBloque.value) : null;
+                const fechaIni = filtroFechaIni.value;
+                const fechaFin = filtroFechaFin.value;
+
+                if (fincaId) lista = lista.filter(m => m.finca_id === fincaId);
+                if (bloqueId) lista = lista.filter(m => m.bloque_id === bloqueId);
+                if (fechaIni) lista = lista.filter(m => m.fecha >= fechaIni);
+                if (fechaFin) lista = lista.filter(m => m.fecha <= fechaFin);
+
+                redibujarMapa(lista);
+                construirTabla(lista);
+            }
+
+            function redibujarMapa(monitoreos) {
+                markersLayer.clearLayers();
+                if (!monitoreos.length) return;
+                const bounds = L.latLngBounds();
+                monitoreos.forEach(m => {
+                    if (!m.lat || !m.lon) return;
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+                    let color = '#2ecc71';
+                    if (sev >= 60) color = '#e74c3c';
+                    else if (sev >= 30) color = '#f1c40f';
+                    const marker = L.circleMarker([m.lat, m.lon], { radius: 8, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9 }).addTo(markersLayer);
+                    marker.bindPopup(`<b>${m.fecha}</b><br>Técnico: ${m.tecnico || 'N/A'}<br>Severidad: ${sev.toFixed(1)}%`);
+                    bounds.extend([m.lat, m.lon]);
+                });
+                if (monitoreos.length) map.fitBounds(bounds, { padding: [30,30], maxZoom: 16 });
+            }
+
+            function construirTabla(monitoreos) {
+                if (!monitoreos.length) {
+                    tablaBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:2rem;">No hay datos</td></tr>';
+                    return;
+                }
+                const grupos = new Map();
+                monitoreos.forEach(m => {
+                    if (!m.bloque_id) return;
+                    const key = m.bloque_id;
+                    if (!grupos.has(key)) {
+                        grupos.set(key, { sumaSev: 0, count: 0, nombre: m.bloque_nombre || `Bloque ${key}` });
+                    }
+                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
+                    const sev = (total / 60) * 100;
+                    const g = grupos.get(key);
+                    g.sumaSev += sev;
+                    g.count += 1;
+                });
+                let filas = '';
+                for (let [_, g] of grupos.entries()) {
+                    const prom = g.sumaSev / g.count;
+                    let clase = 'baja', texto = 'Baja';
+                    if (prom >= 60) { clase = 'alta'; texto = 'Crítica'; }
+                    else if (prom >= 30) { clase = 'media'; texto = 'Moderada'; }
+                    filas += `<tr><td>${g.nombre}</td><td>${prom.toFixed(1)}%</td><td><span class="prioridad ${clase}">${texto}</span></td></tr>`;
+                }
+                tablaBody.innerHTML = filas;
+            }
+
+            // ---------- EVENTOS ----------
+            btnAplicar.addEventListener('click', aplicarFiltros);
+
+            window.addEventListener('load', async () => {
+                initMap();
+                await cargarCatalogos();
+                await cargarMonitoreos();
+            });
+        })();
+    </script>
+</body>
+</html>
