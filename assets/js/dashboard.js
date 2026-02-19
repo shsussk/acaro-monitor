@@ -1,4 +1,7 @@
 // assets/js/dashboard.js
+import { requireAuth } from "./authGuard.js";
+await requireAuth();
+
 import { fetchFincas, fetchBloquesByFinca, fetchMonitoreos } from "./data.js";
 import { clamp01, severityPct, normalizeText } from "./utils.js";
 import { FINCAS_GEOJSON } from "./fincasGeojson.js";
