@@ -26,14 +26,14 @@
         <label>
           Fecha
           <select id="datePreset">
-            <option value="7">Últimos 7 días</option>
-            <option value="30" selected>Últimos 30 días</option>
+            <option value="7" selected>Últimos 7 días</option>
+            <option value="30">Últimos 30 días</option>
             <option value="custom">Rango personalizado</option>
           </select>
         </label>
 
-        <label>Desde <input id="dateFrom" type="date" /></label>
-        <label>Hasta <input id="dateTo" type="date" /></label>
+        <label>Desde <input id="dateFrom" type="date" disabled /></label>
+        <label>Hasta <input id="dateTo" type="date" disabled /></label>
 
         <label>
           Finca
@@ -46,7 +46,7 @@
         </label>
 
         <button id="btnRefresh" class="btn">Actualizar</button>
-        <button id="btnExport" class="btn btnLight">Exportar CSV (resumen)</button>
+        <button id="btnExportPDF" class="btn">Generar Informe Semanal (PDF)</button>
       </div>
 
       <div class="kpis">
@@ -62,12 +62,31 @@
       </section>
 
       <section class="panel">
+        <h2>Severidad promedio por finca (desglose por órgano)</h2>
+        <canvas id="fincaChart" height="120"></canvas>
+      </section>
+
+      <section class="panel">
         <h2>Top 5 puntos más severos</h2>
         <div class="tableWrap">
           <table class="table" id="topTbl">
             <thead>
               <tr>
                 <th>Fecha</th><th>Finca</th><th>Bloque</th><th>Sev%</th><th>Lat</th><th>Lon</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Priorización de campos a aplicar</h2>
+        <div class="tableWrap">
+          <table class="table" id="prioTbl">
+            <thead>
+              <tr>
+                <th>Prioridad</th><th>Finca</th><th>Bloque</th><th>Sev% Promedio</th><th>Registros</th><th>Acción</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -93,6 +112,10 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
   <script type="module" src="assets/js/reports.js"></script>
 </body>
 </html>
+
