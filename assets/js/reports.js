@@ -1,3 +1,6 @@
+import { requireAuth } from "./authGuard.js";
+await requireAuth();
+
 import { fetchFincas, fetchBloquesByFinca, fetchMonitoreosAll } from "./data.js";
 import { severityPct, downloadText } from "./utils.js";
 
