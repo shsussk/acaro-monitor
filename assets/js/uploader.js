@@ -1,3 +1,6 @@
+import { requireAuth } from "./authGuard.js";
+const user = await requireAuth();
+
 import { fetchFincas, fetchBloquesByFinca, upsertMonitoreos } from "./data.js";
 import { normalizeText, parseDateFlexible, isValidISODate, toFloat, toInt, chunk } from "./utils.js";
 
