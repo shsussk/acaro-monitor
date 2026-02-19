@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin · Monitoreo Agrícola</title>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f4f7fb; color: #1a2b3c; }
+        nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
+        nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
+        nav a:hover { border-bottom-color: #8bc34a; color: white; }
+        nav a.active { color: white; border-bottom-color: #ffb74d; }
+        main { padding: 2rem; max-width: 1000px; margin: 0 auto; }
+        h2 { margin-bottom: 2rem; font-weight: 400; }
+        .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .card { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .card h3 { margin-bottom: 1.2rem; color: #1e3a5f; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.6rem 1rem; border: 1px solid #cbd5e0; border-radius: 40px; }
+        .btn { background: #1e3a5f; color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 40px; font-weight: 600; cursor: pointer; margin-right: 0.5rem; }
+        .btn-small { padding: 0.3rem 1rem; font-size: 0.9rem; }
+        .btn-danger { background: #b22222; }
+        .btn-danger:hover { background: #8b1a1a; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th { text-align: left; font-weight: 600; color: #4a5f73; font-size: 0.8rem; text-transform: uppercase; padding-bottom: 0.6rem; }
+        td { padding: 0.6rem 0; border-bottom: 1px solid #e9eef2; }
+        .acciones button { margin-right: 0.3rem; }
+        .message { padding: 0.8rem; border-radius: 40px; margin: 1rem 0; background: #e3f2fd; }
+        footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="dashboard.html">🌍 Dashboard</a>
+        <a href="informes.html">📈 Informes</a>
+        <a href="exceles.html">📎 Cargar CSV</a>
+        <a href="admin.html" class="active">⚙️ Admin</a>
+    </nav>
+    <main>
+        <h2>⚙️ Administración de catálogos</h2>
+        <div class="admin-grid">
+            <!-- Gestión de Fincas -->
+            <div class="card">
+                <h3>🏡 Fincas</h3>
+                <div class="form-group">
+                    <label>Nueva finca</label>
+                    <input type="text" id="nuevaFinca" placeholder="Nombre de la finca">
+                </div>
+                <button class="btn" id="btnAgregarFinca">Agregar</button>
+                <table id="tablaFincas">
+                    <thead><tr><th>Nombre</th><th>Acciones</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <div id="fincaMessage" class="message"></div>
+            </div>
+
+            <!-- Gestión de Bloques -->
+            <div class="card">
+                <h3>🧱 Bloques</h3>
+                <div class="form-group">
+                    <label>Finca</label>
+                    <select id="selectFincaBloque"></select>
+                </div>
+                <div class="form-group">
+                    <label>Nuevo bloque</label>
+                    <input type="text" id="nuevoBloque" placeholder="Ej: Bloque 1">
+                </div>
+                <button class="btn" id="btnAgregarBloque">Agregar bloque</button>
+                <table id="tablaBloques">
+                    <thead><tr><th>Finca</th><th>Bloque</th><th>Acciones</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <div id="bloqueMessage" class="message"></div>
+            </div>
+        </div>
+        <footer>© monitoreo ácaros</footer>
+    </main>
+
+    <script>
+        (function() {
+            const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            // Elementos
+            const tablaFincasBody = document.querySelector('#tablaFincas tbody');
+            const tablaBloquesBody = document.querySelector('#tablaBloques tbody');
+            const selectFinca = document.getElementById('selectFincaBloque');
+            const nuevaFincaInput = document.getElementById('nuevaFinca');
+            const nuevoBloqueInput = document.getElementById('nuevoBloque');
+            const btnAgregarFinca = document.getElementById('btnAgregarFinca');
+            const btnAgregarBloque = document.getElementById('btnAgregarBloque');
+            const fincaMsg = document.getElementById('fincaMessage');
+            const bloqueMsg = document.getElementById('bloqueMessage');
+
+            let fincas = [];
+            let bloques = [];
+
+            // Cargar datos iniciales
+            async function cargarFincas() {
+                const { data, error } = await supabase.from('fincas').select('*').order('nombre');
+                if (error) return;
+                fincas = data || [];
+                renderFincas();
+                renderSelectFinca();
+            }
+
+            async function cargarBloques() {
+                const { data, error } = await supabase.from('bloques').select('*, fincas(nombre)');
+                if (error) return;
+                bloques = data || [];
+                renderBloques();
+            }
+
+            function renderFincas() {
+                let html = '';
+                fincas.forEach(f => {
+                    html += `<tr><td>${f.nombre}</td><td><button class="btn btn-small btn-danger" onclick="eliminarFinca(${f.id})">Eliminar</button></td></tr>`;
+                });
+                tablaFincasBody.innerHTML = html;
+            }
+
+            function renderSelectFinca() {
+                let options = '<option value="">Seleccione finca</option>';
+                fincas.forEach(f => {
+                    options += `<option value="${f.id}">${f.nombre}</option>`;
+                });
+                selectFinca.innerHTML = options;
+            }
+
+            function renderBloques() {
+                let html = '';
+                bloques.forEach(b => {
+                    const nombreFinca = b.fincas?.nombre || '?';
+                    html += `<tr><td>${nombreFinca}</td><td>${b.nombre}</td><td><button class="btn btn-small btn-danger" onclick="eliminarBloque(${b.id})">Eliminar</button></td></tr>`;
+                });
+                tablaBloquesBody.innerHTML = html;
+            }
+
+            // Funciones globales para los botones de eliminar
+            window.eliminarFinca = async (id) => {
+                if (!confirm('¿Eliminar esta finca? También se eliminarán sus bloques asociados.')) return;
+                const { error } = await supabase.from('fincas').delete().eq('id', id);
+                if (error) fincaMsg.innerText = 'Error: ' + error.message;
+                else {
+                    fincaMsg.innerText = 'Finca eliminada';
+                    cargarFincas();
+                    cargarBloques();
+                }
+            };
+
+            window.eliminarBloque = async (id) => {
+                if (!confirm('¿Eliminar este bloque?')) return;
+                const { error } = await supabase.from('bloques').delete().eq('id', id);
+                if (error) bloqueMsg.innerText = 'Error: ' + error.message;
+                else {
+                    bloqueMsg.innerText = 'Bloque eliminado';
+                    cargarBloques();
+                }
+            };
+
+            // Agregar finca
+            btnAgregarFinca.addEventListener('click', async () => {
+                const nombre = nuevaFincaInput.value.trim();
+                if (!nombre) return;
+                const { error } = await supabase.from('fincas').insert({ nombre });
+                if (error) fincaMsg.innerText = 'Error: ' + error.message;
+                else {
+                    fincaMsg.innerText = 'Finca agregada';
+                    nuevaFincaInput.value = '';
+                    cargarFincas();
+                }
+            });
+
+            // Agregar bloque
+            btnAgregarBloque.addEventListener('click', async () => {
+                const fincaId = selectFinca.value;
+                const nombre = nuevoBloqueInput.value.trim();
+                if (!fincaId || !nombre) return;
+                const { error } = await supabase.from('bloques').insert({ finca_id: fincaId, nombre });
+                if (error) bloqueMsg.innerText = 'Error: ' + error.message;
+                else {
+                    bloqueMsg.innerText = 'Bloque agregado';
+                    nuevoBloqueInput.value = '';
+                    cargarBloques();
+                }
+            });
+
+            // Inicializar
+            cargarFincas();
+            cargarBloques();
+        })();
+    </script>
+</body>
+</html>
