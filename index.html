@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — Monitoreo Ácaros</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        .layer-toggle { margin-top: 8px; display: flex; gap: 16px; font-size: .85rem; }
+        .layer-toggle label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <header class="navbar">
+        <div class="brand">🌿 Monitoreo <span>Ácaros</span></div>
+        <nav>
+            <a href="index.html">Dashboard</a>
+            <a href="exceles.html">Cargar Datos</a>
+            <a href="informes.html">Informes</a>
+            <a href="admin.html">Admin</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <!-- Filtros -->
+        <div class="card">
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Periodo</label>
+                    <select id="filterPreset">
+                        <option value="week">Última semana</option>
+                        <option value="month" selected>Último mes</option>
+                        <option value="all">Todo</option>
+                        <option value="custom">Personalizado</option>
+                    </select>
+                </div>
+                <div class="filter-group" id="customDates" style="display:none; gap:8px;">
+                    <label>Desde</label>
+                    <input type="date" id="filterFrom">
+                    <label>Hasta</label>
+                    <input type="date" id="filterTo">
+                </div>
+                <div class="filter-group">
+                    <label>Finca</label>
+                    <select id="filterFinca"><option value="">Todas</option></select>
+                </div>
+                <div class="filter-group">
+                    <label>Bloque</label>
+                    <select id="filterBloque"><option value="">Todos</option></select>
+                </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" id="btnUpdate">🔄 Actualizar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpiTotal">—</div>
+                <div class="kpi-label">Total Registros</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpiSevAvg">—</div>
+                <div class="kpi-label">Severidad Prom (%)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpiSevMax">—</div>
+                <div class="kpi-label">Severidad Máx (%)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpiFincas">—</div>
+                <div class="kpi-label">Fincas Activas</div>
+            </div>
+        </div>
+
+        <!-- Mapa -->
+        <div class="card">
+            <h2>🗺️ Mapa de Monitoreos</h2>
+            <div id="map"></div>
+            <div class="layer-toggle">
+                <label><input type="checkbox" id="toggleMarkers" checked> Marcadores</label>
+                <label><input type="checkbox" id="toggleHeatmap" checked> Heatmap</label>
+            </div>
+            <div class="legend-gradient">
+                <span>Baja</span><div class="bar"></div><span>Alta severidad</span>
+            </div>
+        </div>
+
+        <!-- Tabla de datos -->
+        <div class="card">
+            <h2>📋 Registros</h2>
+            <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th><th>Finca</th><th>Bloque</th>
+                            <th>Lat</th><th>Lon</th><th>Técnico</th>
+                            <th>Brotes</th><th>Hojas</th><th>Limones</th>
+                            <th>Botones</th><th>Yemas</th><th>Severidad %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+    // ---- Dashboard Logic ----
+    let map, markersLayer, heatLayer;
+    let allData = [];
+    const PAGE_SIZE = 50;
+    let currentPage = 1;
+
+    function initMap() {
+        map = L.map('map').setView([19.4, -70.7], 9);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+        markersLayer = L.layerGroup().addTo(map);
+        heatLayer = L.heatLayer([], {
+            radius: 30, blur: 20, maxZoom: 17,
+            gradient: {0.2: '#2e7d32', 0.5: '#fdd835', 0.8: '#ff9800', 1: '#e53935'}
+        }).addTo(map);
+
+        document.getElementById('toggleMarkers').addEventListener('change', e => {
+            e.target.checked ? map.addLayer(markersLayer) : map.removeLayer(markersLayer);
+        });
+        document.getElementById('toggleHeatmap').addEventListener('change', e => {
+            e.target.checked ? map.addLayer(heatLayer) : map.removeLayer(heatLayer);
+        });
+    }
+
+    function updateKPIs(data) {
+        document.getElementById('kpiTotal').textContent = data.length;
+        if (data.length === 0) {
+            document.getElementById('kpiSevAvg').textContent = '—';
+            document.getElementById('kpiSevMax').textContent = '—';
+            document.getElementById('kpiFincas').textContent = '0';
+            return;
+        }
+        const sevs = data.map(r => Utils.calcSeveridad(r));
+        const avg = (sevs.reduce((a,b) => a+b, 0) / sevs.length).toFixed(1);
+        const max = Math.max(...sevs).toFixed(1);
+        const fincas = new Set(data.map(r => r.finca_id)).size;
+        document.getElementById('kpiSevAvg').textContent = avg + '%';
+        document.getElementById('kpiSevMax').textContent = max + '%';
+        document.getElementById('kpiFincas').textContent = fincas;
+    }
+
+    function updateMap(data) {
+        markersLayer.clearLayers();
+        const heatPoints = [];
+        const bounds = [];
+
+        data.forEach(r => {
+            if (!r.lat || !r.lon) return;
+            const sev = Utils.calcSeveridad(r);
+            const color = Utils.sevColor(sev);
+            const fincaNombre = r.fincas?.nombre || 'N/A';
+            const bloqueNombre = r.bloques?.nombre || '—';
+
+            const marker = L.circleMarker([r.lat, r.lon], {
+                radius: 7, fillColor: color, color: '#fff',
+                weight: 2, opacity: 1, fillOpacity: 0.85
+            });
+            marker.bindPopup(`
+                <strong>${fincaNombre}</strong> — ${bloqueNombre}<br>
+                📅 ${r.fecha}<br>
+                👤 ${r.tecnico || 'N/A'}<br>
+                🔬 Severidad: <strong style="color:${color}">${sev.toFixed(1)}%</strong><br>
+                <small>Brotes:${r.brotes_pos} Hojas:${r.hojas_adultas_pos} Limones:${r.limones_pos} Botones:${r.botones_pos} Yemas:${r.yemas_pos}</small>
+            `);
+            markersLayer.addLayer(marker);
+
+            heatPoints.push([r.lat, r.lon, sev / 100]);
+            bounds.push([r.lat, r.lon]);
+        });
+
+        heatLayer.setLatLngs(heatPoints);
+        if (bounds.length > 0) {
+            map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+        }
+    }
+
+    function renderTable(data, page) {
+        const tbody = document.getElementById('tableBody');
+        const start = (page - 1) * PAGE_SIZE;
+        const slice = data.slice(start, start + PAGE_SIZE);
+        tbody.innerHTML = slice.map(r => {
+            const sev = Utils.calcSeveridad(r);
+            return `<tr>
+                <td>${r.fecha}</td>
+                <td>${r.fincas?.nombre || 'N/A'}</td>
+                <td>${r.bloques?.nombre || '—'}</td>
+                <td>${r.lat?.toFixed(5) || ''}</td>
+                <td>${r.lon?.toFixed(5) || ''}</td>
+                <td>${r.tecnico || ''}</td>
+                <td>${r.brotes_pos}</td>
+                <td>${r.hojas_adultas_pos}</td>
+                <td>${r.limones_pos}</td>
+                <td>${r.botones_pos}</td>
+                <td>${r.yemas_pos}</td>
+                <td class="${Utils.sevClass(sev)}">${sev.toFixed(1)}%</td>
+            </tr>`;
+        }).join('');
+
+        // Pagination
+        const totalPages = Math.ceil(data.length / PAGE_SIZE);
+        const pag = document.getElementById('pagination');
+        if (totalPages <= 1) { pag.innerHTML = ''; return; }
+        let html = `<button ${page<=1?'disabled':''} onclick="goPage(${page-1})">← Ant</button>`;
+        const start_p = Math.max(1, page - 2);
+        const end_p = Math.min(totalPages, page + 2);
+        for (let i = start_p; i <= end_p; i++) {
+            html += `<button class="${i===page?'active':''}" onclick="goPage(${i})">${i}</button>`;
+        }
+        html += `<button ${page>=totalPages?'disabled':''} onclick="goPage(${page+1})">Sig →</button>`;
+        pag.innerHTML = html;
+    }
+
+    function goPage(p) {
+        currentPage = p;
+        renderTable(allData, currentPage);
+    }
+
+    async function refresh() {
+        const btn = document.getElementById('btnUpdate');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Cargando...';
+
+        const filters = getFilterValues();
+        allData = await queryMonitoreos(filters);
+        updateKPIs(allData);
+        updateMap(allData);
+        currentPage = 1;
+        renderTable(allData, 1);
+
+        btn.disabled = false;
+        btn.textContent = '🔄 Actualizar';
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        initMap();
+        await populateFilters();
+        document.getElementById('btnUpdate').addEventListener('click', refresh);
+        refresh();
+    });
+    </script>
+</body>
+</html>

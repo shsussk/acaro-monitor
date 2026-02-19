@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargar Datos — Monitoreo Ácaros</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar">
+        <div class="brand">🌿 Monitoreo <span>Ácaros</span></div>
+        <nav>
+            <a href="index.html">Dashboard</a>
+            <a href="exceles.html">Cargar Datos</a>
+            <a href="informes.html">Informes</a>
+            <a href="admin.html">Admin</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h2>📤 Cargar archivo CSV o Excel (.xlsx)</h2>
+            <div class="dropzone" id="dropzone">
+                <div class="icon">📁</div>
+                <p><strong>Arrastra un archivo aquí</strong> o haz clic para seleccionar</p>
+                <p style="font-size:.8rem; color:#999;">Formatos: .csv, .xlsx — Máximo ~50,000 filas</p>
+                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none;">
+            </div>
+        </div>
+
+        <div class="card" id="previewCard" style="display:none;">
+            <h2>👁️ Vista previa y mapeo de columnas</h2>
+            <div id="columnMapping"></div>
+            <div style="margin-top:16px; overflow-x:auto; max-height:300px;">
+                <table class="data-table" id="previewTable">
+                    <thead id="previewHead"></thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:12px;">
+                <button class="btn btn-primary" id="btnUpload">🚀 Procesar y Subir</button>
+                <button class="btn btn-outline" id="btnCancel">✖ Cancelar</button>
+            </div>
+        </div>
+
+        <div class="card" id="progressCard" style="display:none;">
+            <h2>⏳ Progreso de carga</h2>
+            <div class="progress-bar">
+                <div class="fill" id="progressFill" style="width:0%">0%</div>
+            </div>
+            <div id="progressStatus" style="font-size:.9rem; color:#555;"></div>
+            <div id="errorLog" class="error-log" style="display:none;"></div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="card">
+            <h2>📖 Formato esperado del archivo</h2>
+            <p style="margin-bottom:12px;">El archivo debe tener al menos las columnas <strong>Fecha</strong>, <strong>Finca</strong>, <strong>Lat</strong> y <strong>Lon</strong>. Las demás son opcionales.</p>
+            <table class="data-table">
+                <thead><tr><th>Columna</th><th>Tipo</th><th>Requerida</th><th>Ejemplo</th></tr></thead>
+                <tbody>
+                    <tr><td>Fecha</td><td>Fecha</td><td>✅ Sí</td><td>2026-02-15</td></tr>
+                    <tr><td>Finca</td><td>Texto</td><td>✅ Sí</td><td>La Esperanza</td></tr>
+                    <tr><td>Lat / Latitud</td><td>Número</td><td>✅ Sí</td><td>19.6523</td></tr>
+                    <tr><td>Lon / Longitud</td><td>Número</td><td>✅ Sí</td><td>-71.0830</td></tr>
+                    <tr><td>Bloque</td><td>Texto</td><td>❌ No</td><td>B-3</td></tr>
+                    <tr><td>Técnico</td><td>Texto</td><td>❌ No</td><td>Juan Pérez</td></tr>
+                    <tr><td>Brotes</td><td>Entero</td><td>❌ No</td><td>5</td></tr>
+                    <tr><td>Hojas</td><td>Entero</td><td>❌ No</td><td>3</td></tr>
+                    <tr><td>Limones</td><td>Entero</td><td>❌ No</td><td>2</td></tr>
+                    <tr><td>Botones</td><td>Entero</td><td>❌ No</td><td>1</td></tr>
+                    <tr><td>Yemas</td><td>Entero</td><td>❌ No</td><td>4</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+    // ---- Upload Logic ----
+    let rawData = [];
+    let rawHeaders = [];
+    let fincasCatalog = [];
+    let bloquesCatalog = [];
+
+    // Column mapping aliases
+    const ALIASES = {
+        fecha:   ['fecha', 'date', 'dia'],
+        finca:   ['finca', 'farm', 'hacienda', 'propiedad'],
+        bloque:  ['bloque', 'block', 'lote', 'parcela', 'sector'],
+        lat:     ['lat', 'latitud', 'latitude', 'y'],
+        lon:     ['lon', 'lng', 'longitud', 'longitude', 'x'],
+        tecnico: ['tecnico', 'technician', 'evaluador', 'inspector', 'responsable'],
+        brotes:  ['brotes', 'brotes_pos', 'brotes positivos'],
+        hojas:   ['hojas', 'hojas_adultas', 'hojas_adultas_pos', 'hojas adultas', 'hojas positivas'],
+        limones: ['limones', 'limones_pos', 'limones positivos', 'frutos'],
+        botones: ['botones', 'botones_pos', 'botones florales', 'botones positivos'],
+        yemas:   ['yemas', 'yemas_pos', 'yemas positivas']
+    };
+
+    function autoMap(headers) {
+        const mapping = {};
+        const normHeaders = headers.map(h => Utils.normalize(h));
+        for (const [field, aliases] of Object.entries(ALIASES)) {
+            for (const alias of aliases) {
+                const idx = normHeaders.findIndex(h => h === alias || h.includes(alias));
+                if (idx >= 0) { mapping[field] = headers[idx]; break; }
+            }
+        }
+        return mapping;
+    }
+
+    // Dropzone
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+        e.preventDefault(); dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+    function handleFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'csv') {
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true,
+                complete: (result) => {
+                    rawHeaders = result.meta.fields;
+                    rawData = result.data;
+                    showPreview();
+                },
+                error: (err) => Utils.showAlert(document.getElementById('alertContainer'), 'Error leyendo CSV: ' + err.message, 'error')
+            });
+        } else if (['xlsx', 'xls'].includes(ext)) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                    if (json.length === 0) { Utils.showAlert(document.getElementById('alertContainer'), 'El archivo está vacío.', 'warning'); return; }
+                    rawHeaders = Object.keys(json[0]);
+                    rawData = json;
+                    showPreview();
+                } catch (err) {
+                    Utils.showAlert(document.getElementById('alertContainer'), 'Error leyendo Excel: ' + err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            Utils.showAlert(document.getElementById('alertContainer'), 'Formato no soportado. Use .csv o .xlsx', 'error');
+        }
+    }
+
+    function showPreview() {
+        const mapping = autoMap(rawHeaders);
+        // Show column mapping
+        const mappingDiv = document.getElementById('columnMapping');
+        let html = '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px;">';
+        for (const [field, aliases] of Object.entries(ALIASES)) {
+            html += `<div class="filter-group">
+                <label>${field}</label>
+                <select id="map_${field}">
+                    <option value="">— No mapear —</option>
+                    ${rawHeaders.map(h => `<option value="${h}" ${mapping[field]===h?'selected':''}>${h}</option>`).join('')}
+                </select>
+            </div>`;
+        }
+        html += '</div>';
+        mappingDiv.innerHTML = html;
+
+        // Preview table
+        const head = document.getElementById('previewHead');
+        const body = document.getElementById('previewBody');
+        head.innerHTML = '<tr>' + rawHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+        body.innerHTML = rawData.slice(0, 10).map(row =>
+            '<tr>' + rawHeaders.map(h => `<td>${row[h] ?? ''}</td>`).join('') + '</tr>'
+        ).join('');
+
+        document.getElementById('previewCard').style.display = '';
+    }
+
+    document.getElementById('btnCancel').addEventListener('click', () => {
+        document.getElementById('previewCard').style.display = 'none';
+        rawData = []; rawHeaders = [];
+        fileInput.value = '';
+    });
+
+    // ---- Upload ----
+    document.getElementById('btnUpload').addEventListener('click', async () => {
+        const mapping = {};
+        for (const field of Object.keys(ALIASES)) {
+            mapping[field] = document.getElementById(`map_${field}`)?.value || '';
+        }
+
+        if (!mapping.fecha || !mapping.finca || !mapping.lat || !mapping.lon) {
+            Utils.showAlert(document.getElementById('alertContainer'), 'Debes mapear al menos: Fecha, Finca, Lat y Lon', 'error');
+            return;
+        }
+
+        // Load catalogs
+        fincasCatalog = await loadFincas(true);
+        bloquesCatalog = await loadAllBloques();
+
+        const fincaMap = {};
+        fincasCatalog.forEach(f => { fincaMap[Utils.normalize(f.nombre)] = f.id; });
+
+        const bloqueMap = {};
+        bloquesCatalog.forEach(b => {
+            const key = `${b.finca_id}|${Utils.normalize(b.nombre)}`;
+            bloqueMap[key] = b.id;
+        });
+
+        // Process rows
+        const valid = [];
+        const errors = [];
+
+        rawData.forEach((row, idx) => {
+            const lineNum = idx + 2; // +2 for header and 0-index
+            try {
+                const fecha = Utils.parseDate(row[mapping.fecha]);
+                if (!fecha) { errors.push(`Fila ${lineNum}: Fecha inválida "${row[mapping.fecha]}"`); return; }
+
+                const fincaNorm = Utils.normalize(row[mapping.finca]);
+                const fincaId = fincaMap[fincaNorm];
+                if (!fincaId) { errors.push(`Fila ${lineNum}: Finca no encontrada "${row[mapping.finca]}"`); return; }
+
+                const lat = Utils.parseFloat(row[mapping.lat]);
+                const lon = Utils.parseFloat(row[mapping.lon]);
+                if (lat === null || lon === null) { errors.push(`Fila ${lineNum}: Lat/Lon inválidas`); return; }
+                if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { errors.push(`Fila ${lineNum}: Lat/Lon fuera de rango`); return; }
+
+                let bloqueId = null;
+                if (mapping.bloque && row[mapping.bloque]) {
+                    const bKey = `${fincaId}|${Utils.normalize(row[mapping.bloque])}`;
+                    bloqueId = bloqueMap[bKey] || null;
+                }
+
+                const record = {
+                    fecha,
+                    finca_id: fincaId,
+                    bloque_id: bloqueId,
+                    lat, lon,
+                    tecnico: mapping.tecnico ? String(row[mapping.tecnico] || '').trim() : '',
+                    brotes_pos: Utils.parseInt(mapping.brotes ? row[mapping.brotes] : 0),
+                    hojas_adultas_pos: Utils.parseInt(mapping.hojas ? row[mapping.hojas] : 0),
+                    limones_pos: Utils.parseInt(mapping.limones ? row[mapping.limones] : 0),
+                    botones_pos: Utils.parseInt(mapping.botones ? row[mapping.botones] : 0),
+                    yemas_pos: Utils.parseInt(mapping.yemas ? row[mapping.yemas] : 0),
+                };
+                record.fingerprint = Utils.fingerprint(record);
+                valid.push(record);
+            } catch (e) {
+                errors.push(`Fila ${lineNum}: Error inesperado — ${e.message}`);
+            }
+        });
+
+        // Show progress
+        document.getElementById('progressCard').style.display = '';
+        const progressFill = document.getElementById('progressFill');
+        const progressStatus = document.getElementById('progressStatus');
+        const errorLog = document.getElementById('errorLog');
+
+        if (valid.length === 0) {
+            progressStatus.textContent = 'No hay filas válidas para subir.';
+            if (errors.length) {
+                errorLog.style.display = '';
+                errorLog.innerHTML = errors.join('<br>');
+            }
+            return;
+        }
+
+        // Upload in batches
+        const BATCH = 500;
+        let uploaded = 0;
+        let dbErrors = 0;
+
+        for (let i = 0; i < valid.length; i += BATCH) {
+            const batch = valid.slice(i, i + BATCH);
+            const { error } = await db.from('monitoreos')
+                .upsert(batch, { onConflict: 'fingerprint', ignoreDuplicates: false });
+            if (error) {
+                dbErrors += batch.length;
+                errors.push(`Lote ${Math.floor(i/BATCH)+1}: Error DB — ${error.message}`);
+            } else {
+                uploaded += batch.length;
+            }
+            const pct = Math.round(((i + batch.length) / valid.length) * 100);
+            progressFill.style.width = pct + '%';
+            progressFill.textContent = pct + '%';
+            progressStatus.textContent = `Subidos: ${uploaded} / ${valid.length} — Errores DB: ${dbErrors}`;
+        }
+
+        // Final status
+        const totalErrors = errors.length;
+        progressStatus.innerHTML = `
+            ✅ <strong>${uploaded}</strong> registros subidos exitosamente.<br>
+            ⚠️ <strong>${rawData.length - valid.length}</strong> filas omitidas por validación.<br>
+            ❌ <strong>${dbErrors}</strong> errores de base de datos.
+        `;
+        if (totalErrors > 0) {
+            errorLog.style.display = '';
+            errorLog.innerHTML = errors.slice(0, 100).join('<br>') +
+                (errors.length > 100 ? `<br>... y ${errors.length - 100} errores más.` : '');
+        }
+
+        Utils.showAlert(document.getElementById('alertContainer'),
+            `Carga completada: ${uploaded} registros insertados.`, uploaded > 0 ? 'success' : 'warning');
+    });
+    </script>
+</body>
+</html>
