@@ -54,13 +54,41 @@
         </table>
       </div>
 
-      <div class="hint">
-        Columnas mínimas: Fecha, Finca, Lat/Latitud, Lon/Longitud. Opcionales: Técnico, Brotes, Hojas, Limones, Botones, Yemas.
+      <div class="hint" style="margin-top:10px;">
+        Columnas mínimas: Fecha, Finca, Lat/Latitud, Lon/Longitud. Opcionales: Técnico, Brotes, Hojas, Limones, Botones, Yemas, Bloque.
+      </div>
+
+      <hr style="border:none; border-top:1px solid rgba(255,255,255,.10); margin:16px 0;">
+
+      <h2>Historial de cargas</h2>
+      <div class="row">
+        <button id="btnReloadUploads" class="btn btnLight">Actualizar historial</button>
+        <div class="muted">Puedes eliminar una carga completa (borra sus monitoreos asociados).</div>
+      </div>
+
+      <div class="tableWrap" style="margin-top:10px;">
+        <table class="table" id="uploadTbl">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha</th>
+              <th>Archivo</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Válidas</th>
+              <th>Inválidas</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
   </main>
 
+  <!-- CSV -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- XLSX -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script type="module" src="assets/js/uploader.js"></script>
