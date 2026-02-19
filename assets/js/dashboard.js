@@ -1,11 +1,11 @@
 // assets/js/dashboard.js
-import { supabase } from "./supabaseClient.js";
 import { requireAuth } from "./authGuard.js";
-await requireAuth();
-
+import { supabase } from "./supabaseClient.js";
 import { fetchFincas, fetchBloquesByFinca, fetchMonitoreos } from "./data.js";
 import { clamp01, severityPct, normalizeText } from "./utils.js";
 import { FINCAS_GEOJSON } from "./fincasGeojson.js";
+
+await requireAuth();
 
 let map, pointsLayer, heatLayer;
 let fincasGeoLayer;
@@ -23,7 +23,7 @@ async function init() {
   setupMap();
   setupUI();
   await loadCatalogs();
-  await refresh();
+  await refresh(true);
 }
 
 function setupMap() {
@@ -54,12 +54,12 @@ function setupMap() {
 
         await populateBloques(f.id);
 
-        // reset bloque a "Todos" al seleccionar por mapa
+        // reset bloque a "Todos"
         const bloqueSelect = document.getElementById("bloqueSelect");
         if (bloqueSelect) bloqueSelect.value = "";
 
         page = 0;
-        await refresh(true); // true = preferir zoom a finca
+        await refresh(true);
       });
     },
   }).addTo(map);
@@ -110,11 +110,28 @@ function setupUI() {
     const finca_id = e.target.value ? parseInt(e.target.value, 10) : null;
     await populateBloques(finca_id);
   });
+
+  // ===== Cerrar sesión =====
+  const btnLogout = document.getElementById("btnLogout");
+  if (btnLogout) {
+    btnLogout.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const { error } = await supabase.auth.signOut(); // [web:118]
+      if (error) {
+        setStatus("Error cerrando sesión: " + (error.message || error));
+        return;
+      }
+      window.location.href = "login.html";
+    });
+  }
 }
 
 async function loadCatalogs() {
   fincas = await fetchFincas();
   const fincaSelect = document.getElementById("fincaSelect");
+
+  // (opcional) limpiar por si recargas
+  fincaSelect.innerHTML = `<option value="">Todas</option>`;
 
   for (const f of fincas) {
     const opt = document.createElement("option");
@@ -150,8 +167,7 @@ function getFilters() {
   const bloque_id = document.getElementById("bloqueSelect").value;
   const tecnico = document.getElementById("tecnicoInput").value;
 
-  let dateFrom = null,
-    dateTo = null;
+  let dateFrom = null, dateTo = null;
 
   const today = new Date();
   const ymd = (d) =>
@@ -183,7 +199,7 @@ async function refresh(preferZoomToFinca = false) {
   setStatus("Cargando...");
   const filters = getFilters();
 
-  // Resaltar finca seleccionada (si aplica)
+  // Resaltar finca seleccionada
   updateFincaHighlight(filters.finca_id);
 
   const { data, count } = await fetchMonitoreos(filters, { page, pageSize });
@@ -193,11 +209,10 @@ async function refresh(preferZoomToFinca = false) {
   renderMapData(data);
 
   const maxPage = Math.max(1, Math.ceil(count / pageSize));
-  document.getElementById("pageInfo").textContent = `Página ${page + 1} / ${maxPage} (Total: ${count})`;
+  document.getElementById("pageInfo").textContent =
+    `Página ${page + 1} / ${maxPage} (Total: ${count})`;
 
   // Zoom inteligente:
-  // - si hay puntos: zoom a puntos
-  // - si no hay puntos y hay finca seleccionada y preferZoomToFinca: zoom al polígono de esa finca
   if (data.length >= 2) {
     const bounds = data
       .filter((r) => Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon)))
@@ -242,8 +257,7 @@ function renderMapData(rows) {
     const sev = severityPct(r);
     const intensity = clamp01(sev / 100);
 
-    const lat = Number(r.lat),
-      lon = Number(r.lon);
+    const lat = Number(r.lat), lon = Number(r.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
 
     const color = sev >= 66 ? "#ff4d6d" : sev >= 33 ? "#ffd166" : "#06d6a0";
@@ -301,18 +315,14 @@ function getSelectedFincaBounds(finca_id) {
   if (!selectedNorm) return null;
 
   let bounds = null;
-
   fincasGeoLayer.eachLayer((layer) => {
     const fname = normalizeText(layer.feature?.properties?.name ?? "");
-    if (fname === selectedNorm && layer.getBounds) {
-      bounds = layer.getBounds();
-    }
+    if (fname === selectedNorm && layer.getBounds) bounds = layer.getBounds();
   });
 
   return bounds;
 }
 
 function setStatus(msg) {
-  document.getElementById("status").textContent = msg;
+  document.getElementById("status").textContent = msg || "";
 }
-
