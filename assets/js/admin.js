@@ -1,3 +1,6 @@
+import { requireAuth } from "./authGuard.js";
+await requireAuth();
+
 import { fetchFincas, fetchBloquesByFinca } from "./data.js";
 
 init();
