@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ácaros | Dashboard</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Monitoreo Ácaros</div>
+    <nav class="nav">
+      <a class="active" href="index.html">Dashboard</a>
+      <a href="exceles.html">Cargar Excel/CSV</a>
+      <a href="informes.html">Informes</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h1>Dashboard</h1>
+
+      <div class="filters">
+        <label>
+          Fecha
+          <select id="datePreset">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="custom">Rango personalizado</option>
+          </select>
+        </label>
+
+        <label>
+          Desde
+          <input id="dateFrom" type="date" />
+        </label>
+
+        <label>
+          Hasta
+          <input id="dateTo" type="date" />
+        </label>
+
+        <label>
+          Finca
+          <select id="fincaSelect">
+            <option value="">Todas</option>
+          </select>
+        </label>
+
+        <label>
+          Bloque
+          <select id="bloqueSelect" disabled>
+            <option value="">Todos</option>
+          </select>
+        </label>
+
+        <label>
+          Técnico (opcional)
+          <input id="tecnicoInput" type="text" placeholder="Nombre" />
+        </label>
+
+        <button id="btnRefresh" class="btn">Actualizar</button>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <section class="panel">
+        <h2>Mapa</h2>
+        <div id="map" class="map"></div>
+        <div class="hint">Severidad = ((brotes+hojas+limones+botones+yemas)/60)*100</div>
+      </section>
+
+      <section class="panel">
+        <h2>Registros</h2>
+        <div class="tableWrap">
+          <table class="table" id="tbl">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Finca</th>
+                <th>Bloque</th>
+                <th>Técnico</th>
+                <th>Sev%</th>
+                <th>Lat</th>
+                <th>Lon</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <button id="prevPage" class="btn btnLight">◀</button>
+          <div id="pageInfo" class="muted">-</div>
+          <button id="nextPage" class="btn btnLight">▶</button>
+        </div>
+
+        <div id="status" class="status"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+  <script type="module" src="assets/js/dashboard.js"></script>
+</body>
+</html>
