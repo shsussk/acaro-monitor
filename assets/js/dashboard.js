@@ -1,4 +1,5 @@
 // assets/js/dashboard.js
+import { supabase } from "./supabaseClient.js";
 import { requireAuth } from "./authGuard.js";
 await requireAuth();
 
