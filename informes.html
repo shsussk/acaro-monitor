@@ -11,7 +11,6 @@
     <!-- html2pdf -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        /* (Mantén los mismos estilos que antes, no los repito por brevedad) */
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
         body { background: #f4f7fb; color: #1a2b3c; }
         nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
@@ -27,28 +26,27 @@
         .btn { background: #1e3a5f; color: white; border: none; padding: 0.6rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; }
         .btn:hover { background: #143049; }
         .btn-outline { background: white; color: #1e3a5f; border: 2px solid #1e3a5f; }
+        .btn-success { background: #2e7d32; }
+        .btn-success:hover { background: #1b5e20; }
         .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; }
         .chart-card { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
         .chart-card h3 { margin-bottom: 1rem; color: #1e3a5f; }
         canvas { max-height: 300px; width: 100%; }
-        .pdf-section { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
-        .pdf-section h3 { margin-bottom: 1rem; color: #1e3a5f; }
-        .pdf-content { background: #f9fcff; border-radius: 20px; padding: 1.5rem; border: 1px solid #d4e3fd; margin: 1rem 0; }
-        .tabla-prioridad { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .tabla-container { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .tabla-container h3 { margin-bottom: 1rem; color: #1e3a5f; }
+        .tabla-prioridad { width: 100%; border-collapse: collapse; }
         .tabla-prioridad th { text-align: left; font-weight: 600; color: #4a5f73; font-size: 0.8rem; text-transform: uppercase; padding-bottom: 0.6rem; }
         .tabla-prioridad td { padding: 0.6rem 0; border-bottom: 1px solid #e9eef2; }
         .prioridad { display: inline-block; padding: 0.2rem 1rem; border-radius: 40px; font-weight: 600; font-size: 0.75rem; min-width: 70px; text-align: center; }
         .prioridad.alta { background: #ff6b6b20; color: #b22222; border: 1px solid #ffa5a5; }
         .prioridad.media { background: #ffd96630; color: #8a6e2b; border: 1px solid #f7d370; }
         .prioridad.baja { background: #a5d6a750; color: #1f6d1f; border: 1px solid #a5d6a7; }
-        .chat-container { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
-        .chat-messages { height: 300px; overflow-y: auto; border: 1px solid #e9eef2; border-radius: 20px; padding: 1rem; margin-bottom: 1rem; background: #f9fcff; display: flex; flex-direction: column; }
-        .message { margin-bottom: 1rem; padding: 0.5rem 1rem; border-radius: 20px; max-width: 80%; word-wrap: break-word; }
-        .user-message { background: #1e3a5f; color: white; align-self: flex-end; }
-        .bot-message { background: #e9eef2; color: #1a2b3c; align-self: flex-start; }
-        .chat-input-area { display: flex; gap: 0.5rem; }
-        .chat-input-area input { flex: 1; padding: 0.8rem 1.2rem; border: 1px solid #cbd5e0; border-radius: 60px; }
-        .typing { font-style: italic; color: #6f8a9f; }
+        .editor-panel { background: white; border-radius: 24px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); display: none; }
+        .editor-panel h3 { margin-bottom: 1rem; color: #1e3a5f; }
+        .editor-options { display: flex; gap: 2rem; margin-bottom: 1rem; }
+        .editor-options label { display: flex; align-items: center; gap: 0.5rem; }
+        .editor-content { border: 1px solid #cbd5e0; border-radius: 20px; padding: 1rem; min-height: 300px; background: #f9fcff; overflow-y: auto; }
+        [contenteditable="true"] { outline: none; }
         footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
     </style>
 </head>
@@ -91,50 +89,60 @@
             </div>
         </div>
 
-        <!-- Sección de PDF (informe del período) -->
-        <div class="pdf-section">
-            <h3>📄 Informe de priorización</h3>
-            <button class="btn" id="generarPDF">Generar PDF</button>
-            <div id="pdfContent" class="pdf-content">
-                <p>Cargando datos...</p>
+        <!-- Tabla de campos a aplicar (ordenada por severidad) -->
+        <div class="tabla-container">
+            <h3>🧾 Campos a aplicar (prioridad de mayor a menor)</h3>
+            <table class="tabla-prioridad" id="tablaAplicar">
+                <thead>
+                    <tr><th>Finca / Bloque</th><th>Severidad promedio</th><th>Prioridad</th></tr>
+                </thead>
+                <tbody id="tablaAplicarBody"></tbody>
+            </table>
+        </div>
+
+        <!-- Botón para abrir editor -->
+        <button class="btn btn-success" id="btnPrepararInforme">✏️ Preparar informe para PDF</button>
+
+        <!-- Panel de edición (oculto inicialmente) -->
+        <div class="editor-panel" id="editorPanel">
+            <h3>📝 Editar contenido del informe</h3>
+            <div class="editor-options">
+                <label><input type="checkbox" id="incluirTabla" checked> Incluir tabla de priorización</label>
+                <label><input type="checkbox" id="incluirGraficoFincas" checked> Incluir gráfico de severidad por finca</label>
+                <label><input type="checkbox" id="incluirRecomendacion" checked> Incluir recomendación general</label>
+            </div>
+            <div class="editor-content" id="editorContent" contenteditable="true">
+                <!-- Aquí se cargará el contenido editable -->
+            </div>
+            <div style="margin-top: 1rem; display: flex; gap: 1rem;">
+                <button class="btn" id="btnGenerarPDFFinal">📄 Generar PDF</button>
+                <button class="btn btn-outline" id="btnCancelarEdicion">Cancelar</button>
             </div>
         </div>
 
-        <!-- Chatbot Entomólogo con IA -->
-        <div class="chat-container">
-            <h3>🤖 Asistente Entomólogo (con IA)</h3>
-            <div id="chatMessages" class="chat-messages">
-                <div class="message bot-message">Hola, soy tu asistente especializado en ácaros. Puedo ayudarte a interpretar los datos y recomendar qué campos aplicar. ¿Qué deseas consultar?</div>
-            </div>
-            <div class="chat-input-area">
-                <input type="text" id="chatInput" placeholder="Ej: ¿Qué bloques debo tratar esta semana?">
-                <button class="btn" id="sendChat">Enviar</button>
-            </div>
-        </div>
-
-        <footer>© monitoreo ácaros · informes con IA</footer>
+        <footer>© monitoreo ácaros · informes editables</footer>
     </main>
 
     <script>
         (function() {
-            // ---------- CONFIGURACIÓN ----------
+            // Configuración Supabase
             const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
-            // ⚠️ Para producción, usa una función serverless; aquí usamos un proxy público para evitar CORS (solo pruebas)
-            const OPENAI_API_KEY = 'sk-90ff0598415446b298d5c4c911a80404';
-            const USE_PROXY = true; // Cambia a false si implementas tu propia API
-
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
             // Elementos DOM
             const periodoSelect = document.getElementById('periodoSelect');
             const fechaRefInput = document.getElementById('fechaRef');
             const btnAplicar = document.getElementById('aplicarFiltro');
-            const btnGenerarPDF = document.getElementById('generarPDF');
-            const pdfContentDiv = document.getElementById('pdfContent');
-            const chatMessages = document.getElementById('chatMessages');
-            const chatInput = document.getElementById('chatInput');
-            const btnSendChat = document.getElementById('sendChat');
+            const btnPrepararInforme = document.getElementById('btnPrepararInforme');
+            const btnGenerarPDFFinal = document.getElementById('btnGenerarPDFFinal');
+            const btnCancelarEdicion = document.getElementById('btnCancelarEdicion');
+            const editorPanel = document.getElementById('editorPanel');
+            const editorContent = document.getElementById('editorContent');
+            const incluirTabla = document.getElementById('incluirTabla');
+            const incluirGraficoFincas = document.getElementById('incluirGraficoFincas');
+            const incluirRecomendacion = document.getElementById('incluirRecomendacion');
+            const tablaAplicarBody = document.getElementById('tablaAplicarBody');
 
             // Variables globales
             let todosMonitoreos = [];
@@ -142,6 +150,8 @@
             let fincasMap = new Map();
             let bloquesMap = new Map(); // id -> {nombre, finca_id}
             let chartLine, chartBar;
+            let ultimosMonitoreosFiltrados = [];
+            let ultimoRango = {};
 
             // Inicializar gráficos vacíos
             function initCharts() {
@@ -159,7 +169,7 @@
                 });
             }
 
-            // Cargar datos iniciales (esperar a que todo esté listo)
+            // Cargar datos iniciales
             async function cargarDatos() {
                 await Promise.all([
                     supabase.from('fincas').select('*').then(({data}) => {
@@ -239,7 +249,7 @@
                 const fincaIds = Array.from(fincaSev.keys());
                 const nombres = fincaIds.map(id => fincasMap.get(id) || `Finca ${id}`);
                 const promedios = fincaIds.map(id => (fincaSev.get(id).suma / fincaSev.get(id).count).toFixed(1));
-                return { nombres, promedios };
+                return { nombres, promedios, ids: fincaIds };
             }
 
             // Actualizar gráficos
@@ -255,17 +265,12 @@
                 chartBar.update();
             }
 
-            // Generar contenido del PDF con tabla completa
-            async function generarContenidoPDF(monitoreos, rango) {
-                if (!monitoreos.length) return '<p>No hay datos en el período seleccionado.</p>';
-
-                // Si no tenemos bloques cargados, los volvemos a pedir (por si acaso)
+            // Obtener lista de bloques/fincas con severidad (para tabla de aplicar)
+            function obtenerListaPriorizada(monitoreos) {
                 if (bloquesMap.size === 0) {
-                    const { data } = await supabase.from('bloques').select('*');
-                    if (data) data.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+                    return [];
                 }
 
-                // Agrupar por finca y bloque
                 const grupos = new Map(); // clave: "fincaId-bloqueId" o "fincaId-sinBloque"
 
                 for (const m of monitoreos) {
@@ -291,21 +296,73 @@
                     g.count++;
                 }
 
-                let html = `<h4>Informe: ${rango.inicio} al ${rango.fin}</h4>`;
-                html += `<p>Total de monitoreos en el período: ${monitoreos.length}</p>`;
-                html += `<table class="tabla-prioridad"><thead><tr><th>Finca / Bloque</th><th>Severidad promedio</th><th>Prioridad</th></tr></thead><tbody>`;
-
-                const filas = [];
+                const lista = [];
                 for (let [_, g] of grupos.entries()) {
                     const prom = g.sumaSev / g.count;
-                    let clase = 'baja', texto = 'Baja';
-                    if (prom >= 60) { clase = 'alta'; texto = 'Crítica'; }
-                    else if (prom >= 30) { clase = 'media'; texto = 'Moderada'; }
-                    filas.push(`<tr><td>${g.nombre}</td><td>${prom.toFixed(1)}%</td><td><span class="prioridad ${clase}">${texto}</span></td></tr>`);
+                    let prioridadTexto = 'Baja';
+                    let prioridadClass = 'baja';
+                    if (prom >= 60) { prioridadTexto = 'Crítica'; prioridadClass = 'alta'; }
+                    else if (prom >= 30) { prioridadTexto = 'Moderada'; prioridadClass = 'media'; }
+                    lista.push({
+                        nombre: g.nombre,
+                        severidad: prom,
+                        prioridadTexto,
+                        prioridadClass
+                    });
                 }
-                html += filas.join('');
-                html += '</tbody></table>';
-                html += `<p><strong>Recomendación general:</strong> ${obtenerRecomendacionGeneral(monitoreos)}</p>`;
+                lista.sort((a, b) => b.severidad - a.severidad);
+                return lista;
+            }
+
+            // Renderizar tabla de aplicar
+            function renderTablaAplicar(monitoreos) {
+                const lista = obtenerListaPriorizada(monitoreos);
+                let html = '';
+                lista.forEach(item => {
+                    html += `<tr><td>${item.nombre}</td><td>${item.severidad.toFixed(1)}%</td><td><span class="prioridad ${item.prioridadClass}">${item.prioridadTexto}</span></td></tr>`;
+                });
+                tablaAplicarBody.innerHTML = html || '<tr><td colspan="3">No hay datos</td></tr>';
+            }
+
+            // Generar contenido HTML para el editor
+            function generarContenidoEditor(monitoreos, rango) {
+                let html = `<h2>Informe de monitoreo</h2>`;
+                html += `<p><strong>Período:</strong> ${rango.inicio} al ${rango.fin}</p>`;
+
+                if (incluirTabla.checked) {
+                    html += `<h3>Priorización de campos a aplicar</h3>`;
+                    const lista = obtenerListaPriorizada(monitoreos);
+                    if (lista.length) {
+                        html += `<table border="1" cellpadding="5" style="border-collapse: collapse; width: 100%;">`;
+                        html += `<thead><tr><th>Finca / Bloque</th><th>Severidad promedio</th><th>Prioridad</th></tr></thead><tbody>`;
+                        lista.forEach(item => {
+                            html += `<tr><td>${item.nombre}</td><td>${item.severidad.toFixed(1)}%</td><td>${item.prioridadTexto}</td></tr>`;
+                            });
+                        html += `</tbody></table>`;
+                    } else {
+                        html += `<p>No hay datos de priorización.</p>`;
+                    }
+                }
+
+                if (incluirGraficoFincas.checked) {
+                    const { nombres, promedios } = calcularSeveridadPorFinca(monitoreos);
+                    html += `<h3>Severidad promedio por finca</h3>`;
+                    if (nombres.length) {
+                        html += `<ul>`;
+                        for (let i = 0; i < nombres.length; i++) {
+                            html += `<li>${nombres[i]}: ${promedios[i]}%</li>`;
+                        }
+                        html += `</ul>`;
+                    } else {
+                        html += `<p>No hay datos por finca.</p>`;
+                    }
+                }
+
+                if (incluirRecomendacion.checked) {
+                    html += `<h3>Recomendación general</h3>`;
+                    html += `<p>${obtenerRecomendacionGeneral(monitoreos)}</p>`;
+                }
+
                 return html;
             }
 
@@ -327,147 +384,130 @@
                 const fechaRef = fechaRefInput.value;
                 if (!fechaRef) return;
                 const rango = getRangoFecha(periodo, fechaRef);
-                const monitoreosFiltrados = filtrarPorFecha(rango);
-                actualizarGraficos(monitoreosFiltrados);
-                const contenido = await generarContenidoPDF(monitoreosFiltrados, rango);
-                pdfContentDiv.innerHTML = contenido;
+                ultimosMonitoreosFiltrados = filtrarPorFecha(rango);
+                ultimoRango = rango;
+                actualizarGraficos(ultimosMonitoreosFiltrados);
+                renderTablaAplicar(ultimosMonitoreosFiltrados);
             }
 
-            // Generar PDF
-            function generarPDF() {
-                const elemento = pdfContentDiv;
-                const opt = {
-                    margin:       0.5,
-                    filename:     `informe_${fechaRefInput.value}.pdf`,
-                    image:        { type: 'jpeg', quality: 0.98 },
-                    html2canvas:  { scale: 2 },
-                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-                };
-                html2pdf().set(opt).from(elemento).save();
-            }
-
-            // ---------- CHATBOT CON OPENAI (con proxy para evitar CORS) ----------
-            async function enviarMensaje() {
-                const texto = chatInput.value.trim();
-                if (!texto) return;
-
-                // Mostrar mensaje del usuario
-                const userDiv = document.createElement('div');
-                userDiv.classList.add('message', 'user-message');
-                userDiv.textContent = texto;
-                chatMessages.appendChild(userDiv);
-
-                // Mostrar indicador de escritura
-                const typingDiv = document.createElement('div');
-                typingDiv.classList.add('message', 'bot-message', 'typing');
-                typingDiv.textContent = 'Escribiendo...';
-                chatMessages.appendChild(typingDiv);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-
-                // Obtener datos del período actual para contexto
-                const periodo = periodoSelect.value;
-                const fechaRef = fechaRefInput.value;
-                const rango = getRangoFecha(periodo, fechaRef);
-                const monitoreosFiltrados = filtrarPorFecha(rango);
-
-                // Construir resumen detallado (incluye tabla de prioridades)
-                const resumen = await construirResumenConTabla(monitoreosFiltrados, rango);
-
-                try {
-                    const respuesta = await llamarOpenAI(texto, resumen);
-                    typingDiv.remove();
-                    const botDiv = document.createElement('div');
-                    botDiv.classList.add('message', 'bot-message');
-                    botDiv.textContent = respuesta;
-                    chatMessages.appendChild(botDiv);
-                } catch (error) {
-                    typingDiv.remove();
-                    const errorDiv = document.createElement('div');
-                    errorDiv.classList.add('message', 'bot-message');
-                    errorDiv.textContent = 'Lo siento, hubo un error al conectar con la IA. Intenta de nuevo.';
-                    chatMessages.appendChild(errorDiv);
-                    console.error(error);
+            // Mostrar editor
+            function mostrarEditor() {
+                if (!ultimosMonitoreosFiltrados.length) {
+                    alert('No hay datos en el período seleccionado.');
+                    return;
                 }
-
-                chatInput.value = '';
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+                const contenido = generarContenidoEditor(ultimosMonitoreosFiltrados, ultimoRango);
+                editorContent.innerHTML = contenido;
+                editorPanel.style.display = 'block';
+                window.scrollTo(0, editorPanel.offsetTop);
             }
 
-            async function construirResumenConTabla(monitoreos, rango) {
-                if (monitoreos.length === 0) return 'No hay datos en el período seleccionado.';
-                // Reutilizamos la misma lógica de agrupación que en el PDF
-                const grupos = new Map();
-                for (const m of monitoreos) {
-                    const fincaId = m.finca_id;
-                    if (!fincaId) continue;
-                    const bloqueId = m.bloque_id;
-                    const key = bloqueId ? `${fincaId}-${bloqueId}` : `${fincaId}-null`;
-                    if (!grupos.has(key)) {
-                        let nombreGrupo;
-                        if (bloqueId) {
-                            const bloque = bloquesMap.get(bloqueId);
-                            nombreGrupo = bloque ? `${bloque.nombre} (${fincasMap.get(fincaId)})` : `Bloque ${bloqueId} (${fincasMap.get(fincaId)})`;
-                        } else {
-                            nombreGrupo = `${fincasMap.get(fincaId)} (sin bloque)`;
-                        }
-                        grupos.set(key, { nombre: nombreGrupo, sumaSev: 0, count: 0 });
+            // Ocultar editor
+            function ocultarEditor() {
+                editorPanel.style.display = 'none';
+            }
+
+            // NUEVA VERSIÓN: Generar PDF desde el contenido editable
+            function generarPDFFinal() {
+                // Clonar el contenido editable para evitar problemas con contenteditable
+                const clone = editorContent.cloneNode(true);
+
+                // Contenedor wrapper para aplicar estilos de impresión
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = `
+                    font-family: Arial, sans-serif;
+                    padding: 40px;
+                    background: white;
+                    color: #000;
+                    max-width: 800px;
+                `;
+                wrapper.appendChild(clone);
+
+                // Estilos básicos para el contenido interno del PDF
+                const elementos = wrapper.querySelectorAll('*');
+                elementos.forEach(el => {
+                    if (el.tagName === 'TABLE') {
+                        el.style.borderCollapse = 'collapse';
+                        el.style.width = '100%';
+                        el.style.margin = '20px 0';
                     }
-                    const total = (m.brotes_pos||0)+(m.hojas_adultas_pos||0)+(m.limones_pos||0)+(m.botones_pos||0)+(m.yemas_pos||0);
-                    const sev = (total / 60) * 100;
-                    const g = grupos.get(key);
-                    g.sumaSev += sev;
-                    g.count++;
-                }
-
-                let tablaTexto = `Resumen de monitoreo del período ${rango.inicio} al ${rango.fin}:\n`;
-                for (let [_, g] of grupos.entries()) {
-                    const prom = g.sumaSev / g.count;
-                    let prioridad = 'Baja';
-                    if (prom >= 60) prioridad = 'Crítica';
-                    else if (prom >= 30) prioridad = 'Moderada';
-                    tablaTexto += `- ${g.nombre}: ${prom.toFixed(1)}% (Prioridad ${prioridad})\n`;
-                }
-                tablaTexto += `Recomendación general: ${obtenerRecomendacionGeneral(monitoreos)}`;
-                return tablaTexto;
-            }
-
-            async function llamarOpenAI(pregunta, contexto) {
-                const messages = [
-                    { role: 'system', content: 'Eres un entomólogo experto en ácaros en cultivos agrícolas. Tu tarea es ayudar a decidir qué campos (bloques) deben ser tratados, basándote en los datos de monitoreo. Usa la tabla de prioridades para recomendar acciones específicas. Responde de manera clara y concisa.' },
-                    { role: 'user', content: `Contexto de monitoreo actual:\n${contexto}\n\nPregunta: ${pregunta}` }
-                ];
-
-                // Si usamos proxy público (solo para pruebas)
-                let url = 'https://api.openai.com/v1/chat/completions';
-                if (USE_PROXY) {
-                    url = 'https://cors-anywhere.herokuapp.com/' + url;
-                }
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                        'Origin': window.location.origin // necesario para algunos proxies
-                    },
-                    body: JSON.stringify({
-                        model: 'gpt-3.5-turbo',
-                        messages: messages,
-                        max_tokens: 400,
-                        temperature: 0.7
-                    })
+                    if (el.tagName === 'TH' || el.tagName === 'TD') {
+                        el.style.border = '1px solid #333';
+                        el.style.padding = '8px';
+                        el.style.textAlign = 'left';
+                    }
+                    if (el.tagName === 'H2') {
+                        el.style.color = '#1e3a5f';
+                        el.style.fontSize = '24px';
+                        el.style.margin = '20px 0 10px';
+                    }
+                    if (el.tagName === 'H3') {
+                        el.style.color = '#1e3a5f';
+                        el.style.fontSize = '18px';
+                        el.style.margin = '15px 0 10px';
+                    }
+                    if (el.tagName === 'P') {
+                        el.style.margin = '6px 0';
+                    }
+                    if (el.tagName === 'UL' || el.tagName === 'OL') {
+                        el.style.margin = '10px 0 10px 20px';
+                    }
                 });
 
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error?.message || 'Error en la API');
-                return data.choices[0].message.content;
+                // Agregar temporalmente al DOM (pero fuera de pantalla)
+                wrapper.style.position = 'absolute';
+                wrapper.style.left = '-9999px';
+                document.body.appendChild(wrapper);
+
+                const opt = {
+                    margin: 0.5,
+                    filename: `informe_${ultimoRango.inicio}_a_${ultimoRango.fin}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { 
+                        scale: 2,
+                        logging: false,
+                        useCORS: true,
+                        backgroundColor: '#ffffff'
+                    },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+
+                html2pdf()
+                    .set(opt)
+                    .from(wrapper)
+                    .save()
+                    .then(() => {
+                        document.body.removeChild(wrapper);
+                    })
+                    .catch(err => {
+                        console.error('Error generando PDF:', err);
+                        document.body.removeChild(wrapper);
+                        alert('Error al generar el PDF. Revisa la consola del navegador.');
+                    });
             }
 
             // Event listeners
             btnAplicar.addEventListener('click', aplicarFiltro);
-            btnGenerarPDF.addEventListener('click', generarPDF);
-            btnSendChat.addEventListener('click', enviarMensaje);
-            chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') enviarMensaje(); });
+            btnPrepararInforme.addEventListener('click', mostrarEditor);
+            btnGenerarPDFFinal.addEventListener('click', generarPDFFinal);
+            btnCancelarEdicion.addEventListener('click', ocultarEditor);
+
+            // Re-generar contenido cuando cambien las opciones del editor
+            incluirTabla.addEventListener('change', () => {
+                if (ultimosMonitoreosFiltrados.length) {
+                    editorContent.innerHTML = generarContenidoEditor(ultimosMonitoreosFiltrados, ultimoRango);
+                }
+            });
+            incluirGraficoFincas.addEventListener('change', () => {
+                if (ultimosMonitoreosFiltrados.length) {
+                    editorContent.innerHTML = generarContenidoEditor(ultimosMonitoreosFiltrados, ultimoRango);
+                }
+            });
+            incluirRecomendacion.addEventListener('change', () => {
+                if (ultimosMonitoreosFiltrados.length) {
+                    editorContent.innerHTML = generarContenidoEditor(ultimosMonitoreosFiltrados, ultimoRango);
+                }
+            });
 
             // Inicializar
             initCharts();
