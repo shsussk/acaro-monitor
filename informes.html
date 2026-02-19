@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ácaros | Informes</title>
+
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Monitoreo Ácaros</div>
+    <nav class="nav">
+      <a href="index.html">Dashboard</a>
+      <a href="exceles.html">Cargar Excel/CSV</a>
+      <a class="active" href="informes.html">Informes</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h1>Informes</h1>
+
+      <div class="filters">
+        <label>
+          Fecha
+          <select id="datePreset">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="custom">Rango personalizado</option>
+          </select>
+        </label>
+
+        <label>Desde <input id="dateFrom" type="date" /></label>
+        <label>Hasta <input id="dateTo" type="date" /></label>
+
+        <label>
+          Finca
+          <select id="fincaSelect"><option value="">Todas</option></select>
+        </label>
+
+        <label>
+          Bloque
+          <select id="bloqueSelect" disabled><option value="">Todos</option></select>
+        </label>
+
+        <button id="btnRefresh" class="btn">Actualizar</button>
+        <button id="btnExport" class="btn btnLight">Exportar CSV (resumen)</button>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="kpiLabel">Registros</div><div id="kpiReg" class="kpiValue">-</div></div>
+        <div class="kpi"><div class="kpiLabel">Severidad promedio</div><div id="kpiSev" class="kpiValue">-</div></div>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <section class="panel">
+        <h2>Tendencia (promedio diario)</h2>
+        <canvas id="trendChart" height="120"></canvas>
+      </section>
+
+      <section class="panel">
+        <h2>Top 5 puntos más severos</h2>
+        <div class="tableWrap">
+          <table class="table" id="topTbl">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Finca</th><th>Bloque</th><th>Sev%</th><th>Lat</th><th>Lon</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Resumen por finca/bloque</h2>
+        <div class="tableWrap">
+          <table class="table" id="sumTbl">
+            <thead>
+              <tr>
+                <th>Finca</th><th>Bloque</th><th>Registros</th><th>Sev% prom</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="status" class="status"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script type="module" src="assets/js/reports.js"></script>
+</body>
+</html>
