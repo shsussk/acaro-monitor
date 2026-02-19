@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Login | Monitoreo Ácaros</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Monitoreo Ácaros</div>
+    <nav class="nav">
+      <a href="login.html" class="active">Login</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="panel" style="max-width:720px; margin:76px auto 0;">
+      <h1>Acceso de personal</h1>
+      <div class="hint">Inicia sesión para acceder al Dashboard, cargas e informes.</div>
+
+      <div class="filters" style="grid-template-columns: 1fr 1fr 140px;">
+        <label>Email
+          <input id="email" type="email" placeholder="tecnico@empresa.com" autocomplete="username" />
+        </label>
+
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" />
+        </label>
+
+        <button id="btnLogin" class="btn">Entrar</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="btnLogout" class="btn btnLight">Cerrar sesión</button>
+        <div id="whoami" class="muted"></div>
+      </div>
+
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { supabase } from "./assets/js/supabaseClient.js";
+
+    const status = (msg) => document.getElementById("status").textContent = msg || "";
+
+    document.getElementById("btnLogin").addEventListener("click", async () => {
+      try {
+        status("Ingresando...");
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+
+        // Si login OK, manda al dashboard
+        window.location.href = "index.html";
+      } catch (e) {
+        status("Error login: " + (e.message || e));
+      }
+    });
+
+    document.getElementById("btnLogout").addEventListener("click", async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        status("Sesión cerrada.");
+        await showUser();
+      } catch (e) {
+        status("Error logout: " + (e.message || e));
+      }
+    });
+
+    async function showUser() {
+      // getUser valida el token en el servidor, útil para autorización. [web:81]
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        document.getElementById("whoami").textContent = "";
+        return;
+      }
+      document.getElementById("whoami").textContent = user ? `Conectado: ${user.email}` : "No has iniciado sesión";
+    }
+
+    await showUser();
+  </script>
+</body>
+</html>
