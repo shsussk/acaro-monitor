@@ -17,35 +17,42 @@
     nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
     nav a:hover { border-bottom-color: #8bc34a; color: white; }
     nav a.active { color: white; border-bottom-color: #ffb74d; }
+
     main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
     h2 { margin-bottom: 1.5rem; font-weight: 400; }
+
     .upload-card { background: white; border-radius: 24px; padding: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); margin-bottom: 2rem; }
     .upload-area { border: 3px dashed #b8ccda; border-radius: 40px; padding: 3rem; text-align: center; background: #f0f8ff; margin: 1.5rem 0; cursor: pointer; }
     .upload-area input { display: none; }
-    .upload-label { font-weight: 600; color: #1e3a5f; text-decoration: underline; cursor: pointer; }
-    .btn { background: #1e3a5f; color: white; border: none; padding: 0.7rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; margin-top: 1rem; }
+    .upload-label { font-weight: 700; color: #1e3a5f; text-decoration: underline; cursor: pointer; }
+    .btn { background: #1e3a5f; color: white; border: none; padding: 0.7rem 1.8rem; border-radius: 40px; font-weight: 700; cursor: pointer; margin-top: 1rem; }
     .btn:hover { background: #143049; }
     .btn:disabled { opacity: 0.5; pointer-events: none; }
     .btn-outline { background: white; color: #1e3a5f; border: 2px solid #1e3a5f; margin-left: 0.5rem; }
     .toast { padding: 1rem; border-radius: 20px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 1rem 0; border-left: 6px solid #8bc34a; line-height: 1.35; }
     .toast.error { border-left-color: #e15554; }
-    .badge { background: #d4e3fd; padding: 0.2rem 0.8rem; border-radius: 60px; font-size: 0.8rem; display: inline-block; }
+    .badge { background: #d4e3fd; padding: 0.2rem 0.8rem; border-radius: 60px; font-size: 0.85rem; display: inline-block; }
+
     .data-table-container { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); margin-top: 2rem; }
     .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
     .table-header h3 { color: #1e3a5f; }
     .filtros-tabla { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     .filtros-tabla select { padding: 0.5rem 1rem; border: 1px solid #cbd5e0; border-radius: 40px; background: white; }
+
     .tabla-scroll { overflow-x: auto; max-height: 500px; overflow-y: auto; border: 1px solid #e9eef2; border-radius: 20px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th { background: #f0f6fd; position: sticky; top: 0; z-index: 10; padding: 1rem 0.5rem; text-align: left; font-weight: 600; color: #1e3a5f; border-bottom: 2px solid #cbd5e0; }
+    th { background: #f0f6fd; position: sticky; top: 0; z-index: 10; padding: 1rem 0.5rem; text-align: left; font-weight: 700; color: #1e3a5f; border-bottom: 2px solid #cbd5e0; }
     td { padding: 0.8rem 0.5rem; border-bottom: 1px solid #e9eef2; }
     tr:hover { background: #f9fcff; }
+
     .pagination { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; flex-wrap: wrap; }
     .page-btn { background: white; border: 1px solid #cbd5e0; color: #1e3a5f; padding: 0.4rem 1rem; border-radius: 40px; cursor: pointer; }
     .page-btn.active { background: #1e3a5f; color: white; border-color: #1e3a5f; }
     .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
     footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
     code { background: #f6f8fa; padding: 0.1rem 0.35rem; border-radius: 6px; }
+    .muted { color:#4a5f73; font-size: 0.9rem; }
   </style>
 </head>
 
@@ -61,10 +68,10 @@
     <h2>📎 Cargar y visualizar datos de monitoreo</h2>
 
     <div class="upload-card">
-      <p>
-        Sube un archivo <strong>CSV o Excel (.xlsx)</strong> con datos de monitoreo.
-        Debe incluir columnas como <code>Fecha</code>, <code>Finca</code>, <code>Lat</code>, <code>Lon</code>,
-        <code>Brotes</code>, <code>Hojas</code>, <code>Limones</code>, <code>Botones</code>, <code>Yemas</code>, <code>Técnico</code>.
+      <p class="muted">
+        Sube un archivo <strong>CSV o Excel (.xlsx)</strong>. Se guardan 2 cosas:
+        (1) filas en <code>monitoreos</code> (sin duplicados por <code>fingerprint</code>),
+        (2) el archivo original en Storage (bucket <code>uploads</code>).
       </p>
 
       <div class="upload-area" id="dropZone">
@@ -73,7 +80,7 @@
         <p class="badge" style="margin-top: 0.8rem;" id="fileSelected">Ningún archivo</p>
       </div>
 
-      <button class="btn" id="btnSubir" disabled>⏫ Procesar y subir (sin duplicados)</button>
+      <button class="btn" id="btnSubir" disabled>⏫ Procesar y subir</button>
       <div id="uploadStatus"></div>
     </div>
 
@@ -94,9 +101,17 @@
         <table>
           <thead>
             <tr>
-              <th>Fecha</th><th>Finca</th><th>Bloque</th><th>Técnico</th>
-              <th>Lat</th><th>Lon</th>
-              <th>Brotes</th><th>Hojas adultas</th><th>Limones</th><th>Botones</th><th>Yemas</th>
+              <th>Fecha</th>
+              <th>Finca</th>
+              <th>Bloque</th>
+              <th>Técnico</th>
+              <th>Lat</th>
+              <th>Lon</th>
+              <th>Brotes</th>
+              <th>Hojas adultas</th>
+              <th>Limones</th>
+              <th>Botones</th>
+              <th>Yemas</th>
               <th>Severidad</th>
             </tr>
           </thead>
@@ -109,20 +124,18 @@
       <div class="pagination" id="pagination"></div>
     </div>
 
-    <footer>© monitoreo ácaros · datos almacenados en Supabase</footer>
+    <footer>© monitoreo ácaros · datos en Supabase</footer>
   </main>
 
-  <!-- IMPORTANTE: Supabase se importa como ESM para evitar window.supabase undefined -->
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';  // [web:100][web:97]
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'; /* createClient init [web:193] */
 
-    // ---------- SUPABASE: pega tus credenciales aquí ----------
+    // ---------- CONFIG SUPABASE ----------
     const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // DOM
+    // ---------- DOM ----------
     const fileInput = document.getElementById('fileInput');
     const fileSelectedSpan = document.getElementById('fileSelected');
     const btnSubir = document.getElementById('btnSubir');
@@ -134,7 +147,7 @@
     const paginationDiv = document.getElementById('pagination');
     const selectFileBtn = document.getElementById('selectFileBtn');
 
-    // Tabla
+    // ---------- TABLA ----------
     let currentPage = 1;
     const rowsPerPage = 20;
     let totalRows = 0;
@@ -142,11 +155,13 @@
     let fincasMap = new Map();
     let bloquesMap = new Map();
 
-    // Upload settings
+    // ---------- SETTINGS ----------
     const BATCH_SIZE = 500;
     const MAX_ERR_PREVIEW = 25;
+    const MAX_FILE_MB = 15; // sube/baja según tu plan
+    const STORAGE_BUCKET = 'uploads';
 
-    // Utils
+    // ---------- UTILS ----------
     const norm = (s) =>
       String(s ?? '')
         .normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -186,6 +201,7 @@
         return `${y}-${m}-${d}`;
       }
 
+      // Excel serial date
       if (typeof value === 'number' && isFinite(value)) {
         const epoch = new Date(Date.UTC(1899, 11, 30));
         const date = new Date(epoch.getTime() + value * 86400000);
@@ -215,7 +231,6 @@
         const d = String(parsed.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}`;
       }
-
       return null;
     }
 
@@ -224,24 +239,30 @@
       return (total / 60) * 100;
     }
 
-    // Catálogos
+    // ---------- CATALOGOS ----------
     async function loadCatalogos() {
       fincasMap.clear();
       bloquesMap.clear();
+
       const [{ data: fincas, error: e1 }, { data: bloques, error: e2 }] = await Promise.all([
         supabase.from('fincas').select('*'),
         supabase.from('bloques').select('*')
       ]);
-      if (e1) console.error(e1);
-      if (e2) console.error(e2);
-      if (fincas) fincas.forEach(f => fincasMap.set(f.id, f.nombre));
-      if (bloques) bloques.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+
+      if (e1) throw e1;
+      if (e2) throw e2;
+
+      (fincas || []).forEach(f => fincasMap.set(f.id, f.nombre));
+      (bloques || []).forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
     }
 
     function resolveFincaId(nombreFinca) {
       const needle = norm(nombreFinca);
       if (!needle) return null;
-      for (const [id, nombre] of fincasMap.entries()) if (norm(nombre) === needle) return id;
+
+      for (const [id, nombre] of fincasMap.entries()) {
+        if (norm(nombre) === needle) return id;
+      }
       for (const [id, nombre] of fincasMap.entries()) {
         const n = norm(nombre);
         if (n.includes(needle) || needle.includes(n)) return id;
@@ -249,7 +270,7 @@
       return null;
     }
 
-    // Columnas flexibles
+    // ---------- COLUMNAS FLEXIBLES ----------
     const COLS = {
       fecha: ['3_fecha', 'fecha', 'date'],
       finca: ['4_finca', 'finca', 'farm'],
@@ -294,7 +315,7 @@
       return req.filter(k => idx[k] === -1);
     }
 
-    // Fingerprint (deduplicación)
+    // ---------- FINGERPRINT ----------
     function makeFingerprint(r) {
       return [
         r.fecha,
@@ -306,12 +327,12 @@
       ].join('|');
     }
 
-    // Parse CSV
+    // ---------- PARSE CSV ----------
     async function parseCSVFile(file) {
       return new Promise((resolve, reject) => {
         Papa.parse(file, {
           header: true,
-          skipEmptyLines: true,
+          skipEmptyLines: true, // recomendado por PapaParse docs [web:105]
           worker: true,
           complete: resolve,
           error: reject
@@ -365,7 +386,7 @@
       return { registros: regs, errores: errs };
     }
 
-    // Parse XLSX
+    // ---------- PARSE XLSX ----------
     async function parseXLSXFile(file) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array', cellDates: true });
@@ -434,6 +455,50 @@
       throw new Error('Tipo de archivo no soportado. Use .csv o .xlsx');
     }
 
+    // ---------- STORAGE UPLOAD (archivo original) ----------
+    async function uploadOriginalFileToStorage(file) {
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+
+      const path = `${yyyy}-${mm}-${dd}/${Date.now()}_${safeName}`;
+
+      // Supabase Storage upload (File) [web:200]
+      const { data, error } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(path, file, {
+          upsert: false,
+          contentType: file.type || 'application/octet-stream'
+        });
+
+      if (error) throw error;
+
+      // Public URL (solo si bucket es público) [web:204]
+      const { data: pub } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(path);
+
+      return { bucket: STORAGE_BUCKET, path: data?.path || path, publicUrl: pub?.publicUrl || null };
+    }
+
+    async function insertUploadLog({ file, storage, rows_total, rows_valid, rows_invalid }) {
+      // Si no creaste la tabla uploads, este insert fallará: puedes comentar esta función.
+      const { error } = await supabase.from('uploads').insert({
+        original_filename: file.name,
+        storage_bucket: storage.bucket,
+        storage_path: storage.path,
+        content_type: file.type || null,
+        file_size: file.size || null,
+        rows_total,
+        rows_valid,
+        rows_invalid
+      });
+      if (error) throw error;
+    }
+
+    // ---------- SUBIR REGISTROS ----------
     async function subirRegistros(registros) {
       const chunks = chunkArray(registros, BATCH_SIZE);
       let done = 0;
@@ -442,7 +507,7 @@
         toast(`⏳ Subiendo lote ${i+1}/${chunks.length}... (${done}/${registros.length})`);
         const { error } = await supabase
           .from('monitoreos')
-          .upsert(chunks[i], { onConflict: 'fingerprint' }); // requiere UNIQUE en Supabase
+          .upsert(chunks[i], { onConflict: 'fingerprint' });
         if (error) throw error;
         done += chunks[i].length;
       }
@@ -450,27 +515,56 @@
     }
 
     async function procesarYSubir(file) {
+      if (!file) throw new Error('No hay archivo.');
+
+      const mb = file.size / (1024 * 1024);
+      if (mb > MAX_FILE_MB) {
+        throw new Error(`El archivo pesa ${mb.toFixed(1)} MB. Máximo permitido: ${MAX_FILE_MB} MB.`);
+      }
+
       toast('⏳ Procesando archivo...');
       await loadCatalogos();
 
       const { registros, errores } = await procesarArchivo(file);
+      const rows_total = registros.length + errores.length;
+      const rows_valid = registros.length;
+      const rows_invalid = errores.length;
 
       if (!registros.length) {
         const extra = errores.length ? `<br><small>Ejemplos:<br>- ${errores.join('<br>- ')}</small>` : '';
         throw new Error('No se encontraron filas válidas.' + extra);
       }
 
-      registros.forEach(r => r.fingerprint = makeFingerprint(r));
+      // Subir archivo original primero
+      toast('⏳ Subiendo archivo original (Storage)...');
+      const storage = await uploadOriginalFileToStorage(file);
 
-      if (errores.length) {
-        toast(`⚠️ Algunas filas se omitieron. Válidas: ${registros.length}.<br><small>Ejemplos:<br>- ${errores.join('<br>- ')}</small>`);
+      // fingerprint + upsert
+      registros.forEach(r => r.fingerprint = makeFingerprint(r));
+      toast('⏳ Subiendo filas a Supabase (monitoreos)...');
+      await subirRegistros(registros);
+
+      // Registrar upload
+      try {
+        toast('⏳ Registrando carga (uploads)...');
+        await insertUploadLog({ file, storage, rows_total, rows_valid, rows_invalid });
+      } catch (e) {
+        // Si falla el log, no detenemos todo (porque el archivo + filas ya subieron)
+        console.warn('No se pudo registrar en uploads:', e);
       }
 
-      const n = await subirRegistros(registros);
-      toast(`✅ Listo: ${n} filas procesadas (sin duplicar por fingerprint).`);
+      const warn = errores.length
+        ? `<br><small>Filas omitidas: ${errores.length}. Ejemplos:<br>- ${errores.join('<br>- ')}</small>`
+        : '';
+
+      const link = storage.publicUrl
+        ? `<br><small>Archivo guardado: <a href="${storage.publicUrl}" target="_blank" rel="noopener">abrir</a></small>`
+        : `<br><small>Archivo guardado en Storage: ${storage.path} (bucket no público o sin URL pública)</small>`;
+
+      toast(`✅ Listo: ${rows_valid} filas válidas guardadas.${link}${warn}`);
     }
 
-    // Tabla (lectura)
+    // ---------- TABLA UI ----------
     async function cargarDatosTabla(page = 1) {
       let query = supabase.from('monitoreos').select('*', { count: 'exact' });
 
@@ -536,27 +630,29 @@
     function renderPagination(page) {
       const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
       let btns = '';
-      btns += `<button class="page-btn" ${page === 1 ? 'disabled' : ''} onclick="cambiarPagina(${page-1})">◀ Anterior</button>`;
+      btns += `<button class="page-btn" ${page === 1 ? 'disabled' : ''} data-page="${page-1}">◀ Anterior</button>`;
 
       const start = Math.max(1, page - 2);
       const end = Math.min(totalPages, page + 2);
 
       for (let i = start; i <= end; i++) {
-        btns += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="cambiarPagina(${i})">${i}</button>`;
+        btns += `<button class="page-btn ${i === page ? 'active' : ''}" data-page="${i}">${i}</button>`;
       }
 
-      btns += `<button class="page-btn" ${page === totalPages ? 'disabled' : ''} onclick="cambiarPagina(${page+1})">Siguiente ▶</button>`;
+      btns += `<button class="page-btn" ${page === totalPages ? 'disabled' : ''} data-page="${page+1}">Siguiente ▶</button>`;
       paginationDiv.innerHTML = btns;
+
+      paginationDiv.querySelectorAll('button[data-page]').forEach(b => {
+        b.addEventListener('click', () => {
+          const p = Number(b.getAttribute('data-page'));
+          if (!Number.isFinite(p)) return;
+          currentPage = p;
+          cargarDatosTabla(p);
+        });
+      });
     }
 
-    window.cambiarPagina = (page) => {
-      const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
-      if (page < 1 || page > totalPages) return;
-      currentPage = page;
-      cargarDatosTabla(page);
-    };
-
-    // Eventos UI
+    // ---------- EVENTOS ----------
     selectFileBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
 
     dropZone.addEventListener('click', () => fileInput.click());
@@ -565,7 +661,8 @@
       e.preventDefault();
       const file = e.dataTransfer.files[0];
       if (!file) return;
-      const ok = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.xlsx');
+      const low = file.name.toLowerCase();
+      const ok = low.endsWith('.csv') || low.endsWith('.xlsx');
       if (!ok) return alert('Solo archivos CSV o Excel (.xlsx)');
       fileInput.files = e.dataTransfer.files;
       fileSelectedSpan.textContent = `📄 ${file.name}`;
@@ -585,8 +682,8 @@
     btnSubir.addEventListener('click', async () => {
       const file = fileInput.files[0];
       if (!file) return;
-      btnSubir.disabled = true;
 
+      btnSubir.disabled = true;
       try {
         toast('⏳ Iniciando...');
         await procesarYSubir(file);
@@ -594,7 +691,7 @@
         await cargarDatosTabla(1);
       } catch (err) {
         console.error(err);
-        toast(`❌ Error: ${err.message}`, true);
+        toast(`❌ Error: ${err.message || err}`, true);
       } finally {
         fileInput.value = '';
         fileSelectedSpan.textContent = 'Ningún archivo';
@@ -614,9 +711,17 @@
       cargarDatosTabla(1);
     });
 
-    // Init
-    await loadCatalogos();
-    await cargarDatosTabla(1);
+    // ---------- INIT ----------
+    (async function init() {
+      try {
+        await loadCatalogos();
+        await cargarDatosTabla(1);
+      } catch (e) {
+        console.error(e);
+        toast('❌ Error inicial cargando catálogos/datos. Revisa RLS/policies.', true);
+      }
+    })();
   </script>
 </body>
 </html>
+
