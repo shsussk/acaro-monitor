@@ -1,509 +1,643 @@
-<script>
-(function () {
-  // ---------- CONFIGURACIÓN SUPABASE ----------
-  const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cargar CSV / Excel · Monitoreo Agrícola</title>
 
-  // Elementos DOM
-  const fileInput = document.getElementById('fileInput');
-  const fileSelectedSpan = document.getElementById('fileSelected');
-  const btnSubir = document.getElementById('btnSubir');
-  const uploadStatus = document.getElementById('uploadStatus');
-  const dropZone = document.getElementById('dropZone');
-  const btnRefrescar = document.getElementById('btnRefrescar');
-  const filtroSemana = document.getElementById('filtroSemana');
-  const tablaBody = document.getElementById('tablaBody');
-  const paginationDiv = document.getElementById('pagination');
+  <!-- Supabase JS SDK (debe cargar antes de tu script) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SheetJS (XLSX) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <!-- PapaParse (CSV robusto) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
-  // Estado tabla
-  let currentPage = 1;
-  const rowsPerPage = 20;
-  let totalRows = 0;
-  let currentData = [];
-  let fincasMap = new Map();
-  let bloquesMap = new Map();
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+    body { background: #f4f7fb; color: #1a2b3c; }
+    nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
+    nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
+    nav a:hover { border-bottom-color: #8bc34a; color: white; }
+    nav a.active { color: white; border-bottom-color: #ffb74d; }
+    main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+    h2 { margin-bottom: 1.5rem; font-weight: 400; }
+    .upload-card { background: white; border-radius: 24px; padding: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); margin-bottom: 2rem; }
+    .upload-area { border: 3px dashed #b8ccda; border-radius: 40px; padding: 3rem; text-align: center; background: #f0f8ff; margin: 1.5rem 0; cursor: pointer; }
+    .upload-area input { display: none; }
+    .upload-label { font-weight: 600; color: #1e3a5f; text-decoration: underline; cursor: pointer; }
+    .btn { background: #1e3a5f; color: white; border: none; padding: 0.7rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; margin-top: 1rem; }
+    .btn:hover { background: #143049; }
+    .btn:disabled { opacity: 0.5; pointer-events: none; }
+    .btn-outline { background: white; color: #1e3a5f; border: 2px solid #1e3a5f; margin-left: 0.5rem; }
+    .toast { padding: 1rem; border-radius: 20px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 1rem 0; border-left: 6px solid #8bc34a; line-height: 1.35; }
+    .toast.error { border-left-color: #e15554; }
+    .badge { background: #d4e3fd; padding: 0.2rem 0.8rem; border-radius: 60px; font-size: 0.8rem; display: inline-block; }
+    .data-table-container { background: white; border-radius: 24px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); margin-top: 2rem; }
+    .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
+    .table-header h3 { color: #1e3a5f; }
+    .filtros-tabla { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .filtros-tabla select, .filtros-tabla input { padding: 0.5rem 1rem; border: 1px solid #cbd5e0; border-radius: 40px; background: white; }
+    .tabla-scroll { overflow-x: auto; max-height: 500px; overflow-y: auto; border: 1px solid #e9eef2; border-radius: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { background: #f0f6fd; position: sticky; top: 0; z-index: 10; padding: 1rem 0.5rem; text-align: left; font-weight: 600; color: #1e3a5f; border-bottom: 2px solid #cbd5e0; }
+    td { padding: 0.8rem 0.5rem; border-bottom: 1px solid #e9eef2; }
+    tr:hover { background: #f9fcff; }
+    .pagination { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; flex-wrap: wrap; }
+    .page-btn { background: white; border: 1px solid #cbd5e0; color: #1e3a5f; padding: 0.4rem 1rem; border-radius: 40px; cursor: pointer; }
+    .page-btn.active { background: #1e3a5f; color: white; border-color: #1e3a5f; }
+    .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
+    code { background: #f6f8fa; padding: 0.1rem 0.35rem; border-radius: 6px; }
+  </style>
+</head>
 
-  // Config carga masiva
-  const BATCH_SIZE = 500; // ajustable (300-2000 típico)
-  const MAX_ROWS_PREVIEW_ERRORS = 25;
+<body>
+  <nav>
+    <a href="index.html">🌍 Dashboard</a>
+    <a href="informes.html">📈 Informes</a>
+    <a href="exceles.html" class="active">📎 Cargar CSV/Excel</a>
+    <a href="admin.html">⚙️ Admin</a>
+  </nav>
 
-  // ---------- UTILIDADES ----------
-  const norm = (s) =>
-    String(s ?? '')
-      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .trim();
+  <main>
+    <h2>📎 Cargar y visualizar datos de monitoreo</h2>
 
-  function showToast(msg, isError=false) {
-    uploadStatus.innerHTML = `<div class="toast ${isError ? 'error' : ''}">${msg}</div>`;
-  }
+    <div class="upload-card">
+      <p>
+        Sube un archivo <strong>CSV o Excel (.xlsx)</strong> con datos de monitoreo.
+        Debe incluir columnas como <code>Fecha</code>, <code>Finca</code>, <code>Lat</code>, <code>Lon</code>,
+        <code>Brotes</code>, <code>Hojas</code>, <code>Limones</code>, <code>Botones</code>, <code>Yemas</code>, <code>Técnico</code>.
+      </p>
 
-  function toISODate(value) {
-    // Devuelve YYYY-MM-DD o null
-    if (value == null || value === '') return null;
+      <div class="upload-area" id="dropZone">
+        <input type="file" id="fileInput" accept=".csv, text/csv, .xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        <p>📂 Arrastra o <span class="upload-label" id="selectFileBtn">selecciona un archivo CSV o Excel</span></p>
+        <p class="badge" style="margin-top: 0.8rem;" id="fileSelected">Ningún archivo</p>
+      </div>
 
-    // Si ya es Date (XLSX con cellDates: true) [web:40][web:43]
-    if (value instanceof Date && !isNaN(value)) {
-      const y = value.getFullYear();
-      const m = String(value.getMonth() + 1).padStart(2, '0');
-      const d = String(value.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
+      <button class="btn" id="btnSubir" disabled>⏫ Procesar y subir (sin duplicados)</button>
+      <div id="uploadStatus"></div>
+    </div>
 
-    // Si viene como número serial excel (a veces)
-    if (typeof value === 'number' && isFinite(value)) {
-      // SheetJS suele manejar esto si cellDates: true; pero por si acaso:
-      // Excel epoch: 1899-12-30 (aprox). Este fallback es básico.
-      const epoch = new Date(Date.UTC(1899, 11, 30));
-      const date = new Date(epoch.getTime() + value * 86400000);
-      if (!isNaN(date)) {
-        const y = date.getUTCFullYear();
-        const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const d = String(date.getUTCDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+    <div class="data-table-container">
+      <div class="table-header">
+        <h3>📋 Datos en Supabase</h3>
+        <div class="filtros-tabla">
+          <select id="filtroSemana">
+            <option value="todo">Todo el historial</option>
+            <option value="semana" selected>Última semana</option>
+            <option value="mes">Último mes</option>
+          </select>
+          <button class="btn-outline btn" id="btnRefrescar">Refrescar</button>
+        </div>
+      </div>
+
+      <div class="tabla-scroll" id="tablaContainer">
+        <table id="tablaMonitoreos">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Finca</th>
+              <th>Bloque</th>
+              <th>Técnico</th>
+              <th>Lat</th>
+              <th>Lon</th>
+              <th>Brotes</th>
+              <th>Hojas adultas</th>
+              <th>Limones</th>
+              <th>Botones</th>
+              <th>Yemas</th>
+              <th>Severidad</th>
+            </tr>
+          </thead>
+          <tbody id="tablaBody">
+            <tr><td colspan="12" style="text-align:center;">Cargando datos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <footer>© monitoreo ácaros · datos almacenados en Supabase</footer>
+  </main>
+
+  <script>
+    (function () {
+      // ---------- SUPABASE: pega tus credenciales aquí ----------
+      const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
+
+      // Evitar error "createClient undefined" [web:71]
+      if (!window.supabase?.createClient) {
+        alert('No cargó el SDK de Supabase (CDN). Revisa internet o bloqueadores.');
+        throw new Error('Supabase SDK no cargó');
       }
-    }
+      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // Si viene como texto: intenta YYYY-MM-DD o DD/MM/YYYY
-    const s = String(value).trim();
-    // YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      // DOM
+      const fileInput = document.getElementById('fileInput');
+      const fileSelectedSpan = document.getElementById('fileSelected');
+      const btnSubir = document.getElementById('btnSubir');
+      const uploadStatus = document.getElementById('uploadStatus');
+      const dropZone = document.getElementById('dropZone');
+      const btnRefrescar = document.getElementById('btnRefrescar');
+      const filtroSemana = document.getElementById('filtroSemana');
+      const tablaBody = document.getElementById('tablaBody');
+      const paginationDiv = document.getElementById('pagination');
+      const selectFileBtn = document.getElementById('selectFileBtn');
 
-    // DD/MM/YYYY o D/M/YYYY
-    const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if (m1) {
-      const dd = String(m1[1]).padStart(2, '0');
-      const mm = String(m1[2]).padStart(2, '0');
-      const yyyy = m1[3];
-      return `${yyyy}-${mm}-${dd}`;
-    }
+      // Tabla
+      let currentPage = 1;
+      const rowsPerPage = 20;
+      let totalRows = 0;
+      let currentData = [];
+      let fincasMap = new Map();
+      let bloquesMap = new Map();
 
-    // último intento: Date.parse
-    const parsed = new Date(s);
-    if (!isNaN(parsed)) {
-      const y = parsed.getFullYear();
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const d = String(parsed.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
+      // Upload settings
+      const BATCH_SIZE = 500;
+      const MAX_ERR_PREVIEW = 25;
 
-    return null;
-  }
+      // Utils
+      const norm = (s) =>
+        String(s ?? '')
+          .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+          .toLowerCase()
+          .trim();
 
-  function toNumberInt(v, fallback=0) {
-    if (v == null || v === '') return fallback;
-    const n = parseInt(String(v).replace(/[^\d\-]/g, ''), 10);
-    return Number.isFinite(n) ? n : fallback;
-  }
-
-  function toNumberFloat(v) {
-    if (v == null || v === '') return null;
-    const s = String(v).replace(',', '.').trim();
-    const n = parseFloat(s);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function calcSeveridad(row) {
-    const total = (row.brotes_pos||0)+(row.hojas_adultas_pos||0)+(row.limones_pos||0)+(row.botones_pos||0)+(row.yemas_pos||0);
-    return (total / 60) * 100;
-  }
-
-  function chunkArray(arr, size) {
-    const out = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-  }
-
-  // ---------- CARGA DE CATÁLOGOS ----------
-  async function loadCatalogos() {
-    const [{ data: fincas, error: e1 }, { data: bloques, error: e2 }] = await Promise.all([
-      supabase.from('fincas').select('*'),
-      supabase.from('bloques').select('*')
-    ]);
-    if (e1) console.error(e1);
-    if (e2) console.error(e2);
-    fincasMap.clear();
-    bloquesMap.clear();
-    if (fincas) fincas.forEach(f => fincasMap.set(f.id, f.nombre));
-    if (bloques) bloques.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
-  }
-
-  function resolveFincaId(nombreFinca) {
-    const needle = norm(nombreFinca);
-    if (!needle) return null;
-
-    // match exacto normalizado
-    for (const [id, nombre] of fincasMap.entries()) {
-      if (norm(nombre) === needle) return id;
-    }
-    // match “contiene” (fallback)
-    for (const [id, nombre] of fincasMap.entries()) {
-      if (norm(nombre).includes(needle) || needle.includes(norm(nombre))) return id;
-    }
-    return null;
-  }
-
-  // ---------- MAPEO FLEXIBLE DE COLUMNAS ----------
-  // Define sinónimos tolerantes
-  const COLS = {
-    fecha: ['3_fecha','fecha','date'],
-    finca: ['4_finca','finca','farm'],
-    tecnico: ['15_tecnico','tecnico','técnico','encuestador'],
-    lat: ['lat_6_geolocalizacion','latitud','lat','latitude'],
-    lon: ['long_6_geolocalizacion','lon','long','longitud','longitude'],
-    brotes: ['10_brotes_hojas','brotes','brote'],
-    hojas: ['11_hojas_adultas','hojas_adultas','adultas','hojas'],
-    limones: ['12_limones','limones','frutos','limon'],
-    botones: ['13_botones_florales','botones','botones_florales','florales'],
-    yemas: ['14_yemas','yemas']
-  };
-
-  function buildHeaderIndex(headers) {
-    // headers: array de strings
-    const idx = {};
-    const hNorm = headers.map(h => norm(h));
-
-    function findIndex(keys) {
-      for (const k of keys) {
-        const kn = norm(k);
-        const i = hNorm.findIndex(h => h === kn || h.includes(kn));
-        if (i !== -1) return i;
+      function toast(html, isError = false) {
+        uploadStatus.innerHTML = `<div class="toast ${isError ? 'error' : ''}">${html}</div>`;
       }
-      return -1;
-    }
 
-    idx.fecha = findIndex(COLS.fecha);
-    idx.finca = findIndex(COLS.finca);
-    idx.tecnico = findIndex(COLS.tecnico);
-    idx.lat = findIndex(COLS.lat);
-    idx.lon = findIndex(COLS.lon);
-    idx.brotes = findIndex(COLS.brotes);
-    idx.hojas = findIndex(COLS.hojas);
-    idx.limones = findIndex(COLS.limones);
-    idx.botones = findIndex(COLS.botones);
-    idx.yemas = findIndex(COLS.yemas);
-
-    return idx;
-  }
-
-  function validateHeaderIndex(idx) {
-    const required = ['fecha', 'finca', 'lat', 'lon'];
-    const missing = required.filter(k => idx[k] === -1);
-    return missing;
-  }
-
-  // ---------- PARSEO CSV (PapaParse) ----------
-  async function parseCSVFile(file) {
-    return new Promise((resolve, reject) => {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: false,
-        worker: true, // para archivos grandes [web:49]
-        complete: (results) => resolve(results),
-        error: (err) => reject(err)
-      });
-    });
-  }
-
-  function csvRowsToRegistros(results) {
-    const headers = results.meta.fields || [];
-    const idx = buildHeaderIndex(headers);
-    const missing = validateHeaderIndex(idx);
-    if (missing.length) {
-      throw new Error(`Faltan columnas requeridas: ${missing.join(', ')} (según el encabezado detectado).`);
-    }
-
-    const registros = [];
-    const errores = [];
-
-    for (const row of results.data) {
-      const fecha = toISODate(row[headers[idx.fecha]]);
-      const nombreFinca = row[headers[idx.finca]];
-      const lat = toNumberFloat(row[headers[idx.lat]]);
-      const lon = toNumberFloat(row[headers[idx.lon]]);
-
-      const brotes = toNumberInt(row[headers[idx.brotes]], 0);
-      const hojas = toNumberInt(row[headers[idx.hojas]], 0);
-      const limones = toNumberInt(row[headers[idx.limones]], 0);
-      const botones = toNumberInt(row[headers[idx.botones]], 0);
-      const yemas = toNumberInt(row[headers[idx.yemas]], 0);
-      const tecnico = String(row[headers[idx.tecnico]] ?? '').trim();
-
-      const finca_id = resolveFincaId(nombreFinca);
-
-      // Validaciones mínimas
-      if (!fecha) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila: fecha inválida (${row[headers[idx.fecha]]})`); continue; }
-      if (lat == null || lon == null) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila ${fecha}: lat/lon inválidos`); continue; }
-      if (!finca_id) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila ${fecha}: finca no encontrada (${nombreFinca})`); continue; }
-
-      registros.push({
-        fecha,
-        finca_id,
-        bloque_id: null,
-        lat, lon,
-        brotes_pos: brotes,
-        hojas_adultas_pos: hojas,
-        limones_pos: limones,
-        botones_pos: botones,
-        yemas_pos: yemas,
-        tecnico
-      });
-    }
-
-    return { registros, errores };
-  }
-
-  // ---------- PARSEO XLSX (SheetJS) ----------
-  async function parseXLSXFile(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, {
-      type: 'array',
-      cellDates: true // para fechas como Date [web:40][web:43]
-    });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    if (!rows || rows.length < 2) return { registros: [], errores: ['El Excel no tiene filas suficientes.'] };
-
-    const headers = rows[0].map(h => String(h).trim());
-    const idx = buildHeaderIndex(headers);
-    const missing = validateHeaderIndex(idx);
-    if (missing.length) {
-      throw new Error(`Faltan columnas requeridas: ${missing.join(', ')} (según el encabezado detectado).`);
-    }
-
-    const registros = [];
-    const errores = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || r.every(v => String(v).trim() === '')) continue;
-
-      const fecha = toISODate(r[idx.fecha]);
-      const nombreFinca = r[idx.finca];
-      const lat = toNumberFloat(r[idx.lat]);
-      const lon = toNumberFloat(r[idx.lon]);
-
-      const brotes = toNumberInt(r[idx.brotes], 0);
-      const hojas = toNumberInt(r[idx.hojas], 0);
-      const limones = toNumberInt(r[idx.limones], 0);
-      const botones = toNumberInt(r[idx.botones], 0);
-      const yemas = toNumberInt(r[idx.yemas], 0);
-      const tecnico = String(r[idx.tecnico] ?? '').trim();
-
-      const finca_id = resolveFincaId(nombreFinca);
-
-      if (!fecha) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila ${i+1}: fecha inválida (${r[idx.fecha]})`); continue; }
-      if (lat == null || lon == null) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila ${i+1} (${fecha}): lat/lon inválidos`); continue; }
-      if (!finca_id) { if (errores.length < MAX_ROWS_PREVIEW_ERRORS) errores.push(`Fila ${i+1} (${fecha}): finca no encontrada (${nombreFinca})`); continue; }
-
-      registros.push({
-        fecha,
-        finca_id,
-        bloque_id: null,
-        lat, lon,
-        brotes_pos: brotes,
-        hojas_adultas_pos: hojas,
-        limones_pos: limones,
-        botones_pos: botones,
-        yemas_pos: yemas,
-        tecnico
-      });
-    }
-
-    return { registros, errores };
-  }
-
-  // ---------- PROCESAR ARCHIVO ----------
-  async function procesarArchivo(file) {
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (ext === 'csv') {
-      const results = await parseCSVFile(file);
-      if (results.errors && results.errors.length) {
-        // PapaParse devuelve errores de formato; no siempre son fatales
-        console.warn('PapaParse errors:', results.errors);
+      function chunkArray(arr, size) {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
       }
-      return csvRowsToRegistros(results);
-    }
-    if (ext === 'xlsx') {
-      return await parseXLSXFile(file);
-    }
-    throw new Error('Tipo de archivo no soportado. Use .csv o .xlsx');
-  }
 
-  // ---------- SUBIDA POR LOTES ----------
-  async function insertarEnLotes(registros) {
-    const chunks = chunkArray(registros, BATCH_SIZE);
-    let inserted = 0;
+      function toNumberFloat(v) {
+        if (v == null || v === '') return null;
+        const s = String(v).replace(',', '.').trim();
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : null;
+      }
 
-    for (let i = 0; i < chunks.length; i++) {
-      showToast(`⏳ Insertando lote ${i+1}/${chunks.length}... (${inserted}/${registros.length})`);
-      const { error } = await supabase.from('monitoreos').insert(chunks[i]); // o upsert(...) [web:51]
-      if (error) throw error;
-      inserted += chunks[i].length;
-    }
+      function toInt(v, fallback = 0) {
+        if (v == null || v === '') return fallback;
+        const n = parseInt(String(v).replace(/[^\d\-]/g, ''), 10);
+        return Number.isFinite(n) ? n : fallback;
+      }
 
-    return inserted;
-  }
+      function toISODate(value) {
+        if (value == null || value === '') return null;
 
-  async function procesarYSubir(file) {
-    showToast('⏳ Procesando archivo...');
-    const { registros, errores } = await procesarArchivo(file);
+        if (value instanceof Date && !isNaN(value)) {
+          const y = value.getFullYear();
+          const m = String(value.getMonth() + 1).padStart(2, '0');
+          const d = String(value.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
 
-    if (!registros.length) {
-      const errText = errores.length ? `<br><small>Ejemplos de errores:<br>- ${errores.join('<br>- ')}</small>` : '';
-      throw new Error('No se encontraron registros válidos.' + errText);
-    }
+        if (typeof value === 'number' && isFinite(value)) {
+          const epoch = new Date(Date.UTC(1899, 11, 30));
+          const date = new Date(epoch.getTime() + value * 86400000);
+          if (!isNaN(date)) {
+            const y = date.getUTCFullYear();
+            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(date.getUTCDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          }
+        }
 
-    if (errores.length) {
-      // Aviso pero no bloquea
-      showToast(`⚠️ Se omitieron filas con errores. Filas válidas: ${registros.length}.<br><small>Ejemplos:<br>- ${errores.join('<br>- ')}</small>`);
-    }
+        const s = String(value).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-    const inserted = await insertarEnLotes(registros);
-    showToast(`✅ ${inserted} registros insertados correctamente`);
-  }
+        const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (m1) {
+          const dd = String(m1[1]).padStart(2, '0');
+          const mm = String(m1[2]).padStart(2, '0');
+          const yyyy = m1[3];
+          return `${yyyy}-${mm}-${dd}`;
+        }
 
-  // ---------- UI CARGA ----------
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', (e) => e.preventDefault());
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const ok = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.xlsx');
-    if (!ok) return alert('Solo archivos CSV o Excel (.xlsx)');
-    fileInput.files = e.dataTransfer.files;
-    fileSelectedSpan.textContent = `📄 ${file.name}`;
-    btnSubir.disabled = false;
-  });
+        const parsed = new Date(s);
+        if (!isNaN(parsed)) {
+          const y = parsed.getFullYear();
+          const m = String(parsed.getMonth() + 1).padStart(2, '0');
+          const d = String(parsed.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
 
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files.length) {
-      fileSelectedSpan.textContent = `📄 ${fileInput.files[0].name}`;
-      btnSubir.disabled = false;
-    } else {
-      fileSelectedSpan.textContent = 'Ningún archivo';
-      btnSubir.disabled = true;
-    }
-  });
+        return null;
+      }
 
-  btnSubir.addEventListener('click', async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
+      function calcSeveridad(m) {
+        const total = (m.brotes_pos || 0) + (m.hojas_adultas_pos || 0) + (m.limones_pos || 0) + (m.botones_pos || 0) + (m.yemas_pos || 0);
+        return (total / 60) * 100;
+      }
 
-    btnSubir.disabled = true;
-    try {
-      await procesarYSubir(file);
-      await cargarDatosTabla(1);
-    } catch (err) {
-      console.error(err);
-      showToast(`❌ Error: ${err.message}`, true);
-    } finally {
-      fileInput.value = '';
-      fileSelectedSpan.textContent = 'Ningún archivo';
-      btnSubir.disabled = true;
-    }
-  });
+      // --- catálogos ---
+      async function loadCatalogos() {
+        fincasMap.clear();
+        bloquesMap.clear();
+        const [{ data: fincas, error: e1 }, { data: bloques, error: e2 }] = await Promise.all([
+          supabase.from('fincas').select('*'),
+          supabase.from('bloques').select('*')
+        ]);
+        if (e1) console.error(e1);
+        if (e2) console.error(e2);
+        if (fincas) fincas.forEach(f => fincasMap.set(f.id, f.nombre));
+        if (bloques) bloques.forEach(b => bloquesMap.set(b.id, { nombre: b.nombre, finca_id: b.finca_id }));
+      }
 
-  // ---------- TABLA DE VISUALIZACIÓN ----------
-  async function cargarDatosTabla(page = 1) {
-    let query = supabase.from('monitoreos').select('*', { count: 'exact' });
+      function resolveFincaId(nombreFinca) {
+        const needle = norm(nombreFinca);
+        if (!needle) return null;
+        for (const [id, nombre] of fincasMap.entries()) if (norm(nombre) === needle) return id;
+        for (const [id, nombre] of fincasMap.entries()) {
+          const n = norm(nombre);
+          if (n.includes(needle) || needle.includes(n)) return id;
+        }
+        return null;
+      }
 
-    const filtro = filtroSemana.value;
-    if (filtro === 'semana') {
-      const d = new Date(); d.setDate(d.getDate() - 7);
-      query = query.gte('fecha', d.toISOString().split('T')[0]);
-    } else if (filtro === 'mes') {
-      const d = new Date(); d.setDate(d.getDate() - 30);
-      query = query.gte('fecha', d.toISOString().split('T')[0]);
-    }
+      // --- columnas flexibles ---
+      const COLS = {
+        fecha: ['3_fecha', 'fecha', 'date'],
+        finca: ['4_finca', 'finca', 'farm'],
+        tecnico: ['15_tecnico', 'tecnico', 'técnico', 'encuestador'],
+        lat: ['lat_6_geolocalizacion', 'latitud', 'lat', 'latitude'],
+        lon: ['long_6_geolocalizacion', 'lon', 'long', 'longitud', 'longitude'],
+        brotes: ['10_brotes_hojas', 'brotes', 'brote'],
+        hojas: ['11_hojas_adultas', 'hojas_adultas', 'adultas', 'hojas'],
+        limones: ['12_limones', 'limones', 'frutos', 'limon'],
+        botones: ['13_botones_florales', 'botones', 'botones_florales', 'florales'],
+        yemas: ['14_yemas', 'yemas']
+      };
 
-    const from = (page - 1) * rowsPerPage;
-    const to = from + rowsPerPage - 1;
-    query = query.range(from, to).order('fecha', { ascending: false });
+      function buildHeaderIndex(headers) {
+        const idx = {};
+        const hNorm = headers.map(h => norm(h));
 
-    const { data, count, error } = await query;
-    if (error) {
-      console.error(error);
-      tablaBody.innerHTML = `<tr><td colspan="12">Error al cargar datos</td></tr>`;
-      return;
-    }
+        function findIndex(keys) {
+          for (const k of keys) {
+            const kn = norm(k);
+            const i = hNorm.findIndex(h => h === kn || h.includes(kn));
+            if (i !== -1) return i;
+          }
+          return -1;
+        }
 
-    currentData = data || [];
-    totalRows = count || 0;
-    renderTabla();
-    renderPagination(page);
-  }
+        idx.fecha = findIndex(COLS.fecha);
+        idx.finca = findIndex(COLS.finca);
+        idx.tecnico = findIndex(COLS.tecnico);
+        idx.lat = findIndex(COLS.lat);
+        idx.lon = findIndex(COLS.lon);
+        idx.brotes = findIndex(COLS.brotes);
+        idx.hojas = findIndex(COLS.hojas);
+        idx.limones = findIndex(COLS.limones);
+        idx.botones = findIndex(COLS.botones);
+        idx.yemas = findIndex(COLS.yemas);
+        return idx;
+      }
 
-  function renderTabla() {
-    if (currentData.length === 0) {
-      tablaBody.innerHTML = `<tr><td colspan="12" style="text-align:center;">No hay datos en este período</td></tr>`;
-      return;
-    }
+      function missingRequired(idx) {
+        const req = ['fecha', 'finca', 'lat', 'lon'];
+        return req.filter(k => idx[k] === -1);
+      }
 
-    let html = '';
-    currentData.forEach(m => {
-      const sev = calcSeveridad(m).toFixed(1);
-      const nombreFinca = fincasMap.get(m.finca_id) || 'Desconocida';
-      let nombreBloque = '—';
-      if (m.bloque_id && bloquesMap.has(m.bloque_id)) nombreBloque = bloquesMap.get(m.bloque_id).nombre;
+      // --- fingerprint ---
+      function makeFingerprint(r) {
+        return [
+          r.fecha,
+          r.finca_id,
+          r.bloque_id ?? '',
+          r.lat,
+          r.lon,
+          (r.tecnico ?? '').trim().toLowerCase()
+        ].join('|');
+      }
 
-      html += `<tr>
-        <td>${m.fecha || ''}</td>
-        <td>${nombreFinca}</td>
-        <td>${nombreBloque}</td>
-        <td>${m.tecnico || ''}</td>
-        <td>${(m.lat!=null && Number.isFinite(m.lat)) ? Number(m.lat).toFixed(5) : ''}</td>
-        <td>${(m.lon!=null && Number.isFinite(m.lon)) ? Number(m.lon).toFixed(5) : ''}</td>
-        <td>${m.brotes_pos || 0}</td>
-        <td>${m.hojas_adultas_pos || 0}</td>
-        <td>${m.limones_pos || 0}</td>
-        <td>${m.botones_pos || 0}</td>
-        <td>${m.yemas_pos || 0}</td>
-        <td>${sev}%</td>
-      </tr>`;
-    });
-    tablaBody.innerHTML = html;
-  }
+      // --- parse CSV ---
+      async function parseCSVFile(file) {
+        return new Promise((resolve, reject) => {
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            worker: true,
+            complete: resolve,
+            error: reject
+          });
+        });
+      }
 
-  function renderPagination(currentPage) {
-    const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
-    let btns = '';
-    btns += `<button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="cambiarPagina(${currentPage - 1})">◀ Anterior</button>`;
-    let start = Math.max(1, currentPage - 2);
-    let end = Math.min(totalPages, currentPage + 2);
-    for (let i = start; i <= end; i++) {
-      btns += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="cambiarPagina(${i})">${i}</button>`;
-    }
-    btns += `<button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="cambiarPagina(${currentPage + 1})">Siguiente ▶</button>`;
-    paginationDiv.innerHTML = btns;
-  }
+      function csvToRegistros(results) {
+        const headers = results.meta.fields || [];
+        const idx = buildHeaderIndex(headers);
+        const miss = missingRequired(idx);
+        if (miss.length) throw new Error(`Faltan columnas requeridas: ${miss.join(', ')}`);
 
-  window.cambiarPagina = (page) => {
-    const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
-    if (page < 1 || page > totalPages) return;
-    currentPage = page;
-    cargarDatosTabla(page);
-  };
+        const regs = [];
+        const errs = [];
 
-  btnRefrescar.addEventListener('click', () => {
-    currentPage = 1;
-    cargarDatosTabla(1);
-  });
+        for (const row of results.data) {
+          const fecha = toISODate(row[headers[idx.fecha]]);
+          const nombreFinca = row[headers[idx.finca]];
+          const lat = toNumberFloat(row[headers[idx.lat]]);
+          const lon = toNumberFloat(row[headers[idx.lon]]);
 
-  filtroSemana.addEventListener('change', () => {
-    currentPage = 1;
-    cargarDatosTabla(1);
-  });
+          const brotes = idx.brotes !== -1 ? toInt(row[headers[idx.brotes]], 0) : 0;
+          const hojas = idx.hojas !== -1 ? toInt(row[headers[idx.hojas]], 0) : 0;
+          const limones = idx.limones !== -1 ? toInt(row[headers[idx.limones]], 0) : 0;
+          const botones = idx.botones !== -1 ? toInt(row[headers[idx.botones]], 0) : 0;
+          const yemas = idx.yemas !== -1 ? toInt(row[headers[idx.yemas]], 0) : 0;
+          const tecnico = idx.tecnico !== -1 ? String(row[headers[idx.tecnico]] ?? '').trim() : '';
 
-  // ---------- INIT ----------
-  async function init() {
-    await loadCatalogos();
-    await cargarDatosTabla(1);
-  }
-  init();
-})();
-</script>
+          const finca_id = resolveFincaId(nombreFinca);
+
+          if (!fecha) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Fecha inválida: ${row[headers[idx.fecha]]}`); continue; }
+          if (lat == null || lon == null) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Lat/Lon inválidos en ${fecha}`); continue; }
+          if (!finca_id) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Finca no encontrada (${nombreFinca}) en ${fecha}`); continue; }
+
+          regs.push({
+            fecha,
+            finca_id,
+            bloque_id: null,
+            lat,
+            lon,
+            tecnico,
+            brotes_pos: brotes,
+            hojas_adultas_pos: hojas,
+            limones_pos: limones,
+            botones_pos: botones,
+            yemas_pos: yemas
+          });
+        }
+
+        return { registros: regs, errores: errs };
+      }
+
+      // --- parse XLSX ---
+      async function parseXLSXFile(file) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+        if (!rows || rows.length < 2) return { registros: [], errores: ['El Excel no tiene filas suficientes.'] };
+
+        const headers = rows[0].map(h => String(h).trim());
+        const idx = buildHeaderIndex(headers);
+        const miss = missingRequired(idx);
+        if (miss.length) throw new Error(`Faltan columnas requeridas: ${miss.join(', ')}`);
+
+        const regs = [];
+        const errs = [];
+
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.every(v => String(v).trim() === '')) continue;
+
+          const fecha = toISODate(r[idx.fecha]);
+          const nombreFinca = r[idx.finca];
+          const lat = toNumberFloat(r[idx.lat]);
+          const lon = toNumberFloat(r[idx.lon]);
+
+          const brotes = idx.brotes !== -1 ? toInt(r[idx.brotes], 0) : 0;
+          const hojas = idx.hojas !== -1 ? toInt(r[idx.hojas], 0) : 0;
+          const limones = idx.limones !== -1 ? toInt(r[idx.limones], 0) : 0;
+          const botones = idx.botones !== -1 ? toInt(r[idx.botones], 0) : 0;
+          const yemas = idx.yemas !== -1 ? toInt(r[idx.yemas], 0) : 0;
+          const tecnico = idx.tecnico !== -1 ? String(r[idx.tecnico] ?? '').trim() : '';
+
+          const finca_id = resolveFincaId(nombreFinca);
+
+          if (!fecha) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Fila ${i+1}: fecha inválida`); continue; }
+          if (lat == null || lon == null) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Fila ${i+1} (${fecha}): lat/lon inválidos`); continue; }
+          if (!finca_id) { if (errs.length < MAX_ERR_PREVIEW) errs.push(`Fila ${i+1} (${fecha}): finca no encontrada (${nombreFinca})`); continue; }
+
+          regs.push({
+            fecha,
+            finca_id,
+            bloque_id: null,
+            lat,
+            lon,
+            tecnico,
+            brotes_pos: brotes,
+            hojas_adultas_pos: hojas,
+            limones_pos: limones,
+            botones_pos: botones,
+            yemas_pos: yemas
+          });
+        }
+
+        return { registros: regs, errores: errs };
+      }
+
+      async function procesarArchivo(file) {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (ext === 'csv') {
+          const results = await parseCSVFile(file);
+          return csvToRegistros(results);
+        }
+        if (ext === 'xlsx') {
+          return await parseXLSXFile(file);
+        }
+        throw new Error('Tipo de archivo no soportado. Use .csv o .xlsx');
+      }
+
+      async function subirRegistros(registros) {
+        const chunks = chunkArray(registros, BATCH_SIZE);
+        let done = 0;
+
+        for (let i = 0; i < chunks.length; i++) {
+          toast(`⏳ Subiendo lote ${i+1}/${chunks.length}... (${done}/${registros.length})`);
+          const { error } = await supabase
+            .from('monitoreos')
+            .upsert(chunks[i], { onConflict: 'fingerprint' }); // requiere UNIQUE en Supabase [web:51]
+          if (error) throw error;
+          done += chunks[i].length;
+        }
+        return done;
+      }
+
+      async function procesarYSubir(file) {
+        toast('⏳ Procesando archivo...');
+        const { registros, errores } = await procesarArchivo(file);
+
+        if (!registros.length) {
+          const extra = errores.length ? `<br><small>Ejemplos:<br>- ${errores.join('<br>- ')}</small>` : '';
+          throw new Error('No se encontraron filas válidas.' + extra);
+        }
+
+        // fingerprint a cada fila
+        registros.forEach(r => r.fingerprint = makeFingerprint(r));
+
+        if (errores.length) {
+          toast(`⚠️ Algunas filas se omitieron. Válidas: ${registros.length}.<br><small>Ejemplos:<br>- ${errores.join('<br>- ')}</small>`);
+        }
+
+        const n = await subirRegistros(registros);
+        toast(`✅ Listo: ${n} filas procesadas (sin duplicar por fingerprint).`);
+      }
+
+      // ---------- Tabla ----------
+      async function cargarDatosTabla(page = 1) {
+        let query = supabase.from('monitoreos').select('*', { count: 'exact' });
+
+        const filtro = filtroSemana.value;
+        if (filtro === 'semana') {
+          const d = new Date(); d.setDate(d.getDate() - 7);
+          query = query.gte('fecha', d.toISOString().split('T')[0]);
+        } else if (filtro === 'mes') {
+          const d = new Date(); d.setDate(d.getDate() - 30);
+          query = query.gte('fecha', d.toISOString().split('T')[0]);
+        }
+
+        const from = (page - 1) * rowsPerPage;
+        const to = from + rowsPerPage - 1;
+
+        const { data, count, error } = await query
+          .range(from, to)
+          .order('fecha', { ascending: false });
+
+        if (error) {
+          console.error(error);
+          tablaBody.innerHTML = `<tr><td colspan="12">Error al cargar datos</td></tr>`;
+          return;
+        }
+
+        currentData = data || [];
+        totalRows = count || 0;
+        renderTabla();
+        renderPagination(page);
+      }
+
+      function renderTabla() {
+        if (currentData.length === 0) {
+          tablaBody.innerHTML = `<tr><td colspan="12" style="text-align:center;">No hay datos</td></tr>`;
+          return;
+        }
+
+        let html = '';
+        currentData.forEach(m => {
+          const sev = calcSeveridad(m).toFixed(1);
+          const nombreFinca = fincasMap.get(m.finca_id) || 'Desconocida';
+          let nombreBloque = '—';
+          if (m.bloque_id && bloquesMap.has(m.bloque_id)) nombreBloque = bloquesMap.get(m.bloque_id).nombre;
+
+          html += `<tr>
+            <td>${m.fecha || ''}</td>
+            <td>${nombreFinca}</td>
+            <td>${nombreBloque}</td>
+            <td>${m.tecnico || ''}</td>
+            <td>${(m.lat != null && Number.isFinite(m.lat)) ? Number(m.lat).toFixed(5) : ''}</td>
+            <td>${(m.lon != null && Number.isFinite(m.lon)) ? Number(m.lon).toFixed(5) : ''}</td>
+            <td>${m.brotes_pos || 0}</td>
+            <td>${m.hojas_adultas_pos || 0}</td>
+            <td>${m.limones_pos || 0}</td>
+            <td>${m.botones_pos || 0}</td>
+            <td>${m.yemas_pos || 0}</td>
+            <td>${sev}%</td>
+          </tr>`;
+        });
+        tablaBody.innerHTML = html;
+      }
+
+      function renderPagination(page) {
+        const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+        let btns = '';
+        btns += `<button class="page-btn" ${page === 1 ? 'disabled' : ''} onclick="cambiarPagina(${page-1})">◀ Anterior</button>`;
+
+        const start = Math.max(1, page - 2);
+        const end = Math.min(totalPages, page + 2);
+
+        for (let i = start; i <= end; i++) {
+          btns += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="cambiarPagina(${i})">${i}</button>`;
+        }
+
+        btns += `<button class="page-btn" ${page === totalPages ? 'disabled' : ''} onclick="cambiarPagina(${page+1})">Siguiente ▶</button>`;
+        paginationDiv.innerHTML = btns;
+      }
+
+      window.cambiarPagina = (page) => {
+        const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        cargarDatosTabla(page);
+      };
+
+      // ---------- Eventos ----------
+      selectFileBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fileInput.click();
+      });
+
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', (e) => e.preventDefault());
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        const ok = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.xlsx');
+        if (!ok) return alert('Solo archivos CSV o Excel (.xlsx)');
+        fileInput.files = e.dataTransfer.files;
+        fileSelectedSpan.textContent = `📄 ${file.name}`;
+        btnSubir.disabled = false;
+      });
+
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+          fileSelectedSpan.textContent = `📄 ${fileInput.files[0].name}`;
+          btnSubir.disabled = false;
+        } else {
+          fileSelectedSpan.textContent = 'Ningún archivo';
+          btnSubir.disabled = true;
+        }
+      });
+
+      btnSubir.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        btnSubir.disabled = true;
+
+        try {
+          toast('⏳ Iniciando...');
+          await loadCatalogos(); // asegurar catálogo actualizado
+          await procesarYSubir(file);
+          currentPage = 1;
+          await cargarDatosTabla(1);
+        } catch (err) {
+          console.error(err);
+          toast(`❌ Error: ${err.message}`, true);
+        } finally {
+          fileInput.value = '';
+          fileSelectedSpan.textContent = 'Ningún archivo';
+          btnSubir.disabled = true;
+        }
+      });
+
+      btnRefrescar.addEventListener('click', async () => {
+        await loadCatalogos();
+        currentPage = 1;
+        cargarDatosTabla(1);
+      });
+
+      filtroSemana.addEventListener('change', async () => {
+        await loadCatalogos();
+        currentPage = 1;
+        cargarDatosTabla(1);
+      });
+
+      // Init
+      (async function init() {
+        await loadCatalogos();
+        await cargarDatosTabla(1);
+      })();
+    })();
+  </script>
+</body>
+</html>
+
 
