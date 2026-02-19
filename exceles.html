@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ácaros | Cargar Excel/CSV</title>
+
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Monitoreo Ácaros</div>
+    <nav class="nav">
+      <a href="index.html">Dashboard</a>
+      <a class="active" href="exceles.html">Cargar Excel/CSV</a>
+      <a href="informes.html">Informes</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h1>Cargar Excel/CSV</h1>
+
+      <div id="dropzone" class="dropzone">
+        <div class="dropTitle">Arrastra el archivo aquí</div>
+        <div class="muted">Soporta .csv y .xlsx</div>
+        <input id="fileInput" type="file" accept=".csv,.xlsx" />
+      </div>
+
+      <div class="row">
+        <button id="btnProcess" class="btn" disabled>Procesar y subir</button>
+        <div id="fileName" class="muted">Ningún archivo</div>
+      </div>
+
+      <div class="progress">
+        <div id="progressBar" class="progressBar"></div>
+      </div>
+      <div id="progressText" class="muted">0%</div>
+
+      <div id="uploadSummary" class="status"></div>
+
+      <h2>Errores (filas omitidas)</h2>
+      <div class="tableWrap">
+        <table class="table" id="errTbl">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Motivo</th>
+              <th>Dato</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="hint">
+        Columnas mínimas: Fecha, Finca, Lat/Latitud, Lon/Longitud. Opcionales: Técnico, Brotes, Hojas, Limones, Botones, Yemas.
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script type="module" src="assets/js/uploader.js"></script>
+</body>
+</html>
