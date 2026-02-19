@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargar CSV · Monitoreo Agrícola</title>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f4f7fb; color: #1a2b3c; }
+        nav { background: #1e3a5f; padding: 1rem 2rem; display: flex; gap: 2.5rem; }
+        nav a { color: #e0e9f0; text-decoration: none; font-size: 1.2rem; font-weight: 500; padding: 0.4rem 0; border-bottom: 3px solid transparent; }
+        nav a:hover { border-bottom-color: #8bc34a; color: white; }
+        nav a.active { color: white; border-bottom-color: #ffb74d; }
+        main { padding: 2rem; max-width: 800px; margin: 0 auto; }
+        h2 { margin-bottom: 2rem; font-weight: 400; }
+        .upload-card { background: white; border-radius: 24px; padding: 2rem; box-shadow: 0 8px 20px rgba(0,0,0,0.04); }
+        .upload-area { border: 3px dashed #b8ccda; border-radius: 40px; padding: 3rem; text-align: center; background: #f0f8ff; margin: 1.5rem 0; cursor: pointer; }
+        .upload-area input { display: none; }
+        .upload-label { font-weight: 600; color: #1e3a5f; text-decoration: underline; cursor: pointer; }
+        .btn { background: #1e3a5f; color: white; border: none; padding: 0.7rem 1.8rem; border-radius: 40px; font-weight: 600; cursor: pointer; margin-top: 1rem; }
+        .btn:hover { background: #143049; }
+        .btn:disabled { opacity: 0.5; pointer-events: none; }
+        .toast { padding: 1rem; border-radius: 60px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 1rem 0; border-left: 6px solid #8bc34a; }
+        .toast.error { border-left-color: #e15554; }
+        .badge { background: #d4e3fd; padding: 0.2rem 0.8rem; border-radius: 60px; font-size: 0.8rem; display: inline-block; }
+        footer { margin-top: 3rem; text-align: center; color: #6f8a9f; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="dashboard.html">🌍 Dashboard</a>
+        <a href="informes.html">📈 Informes</a>
+        <a href="exceles.html" class="active">📎 Cargar CSV</a>
+        <a href="admin.html">⚙️ Admin</a>
+    </nav>
+    <main>
+        <h2>📎 Cargar monitoreo desde CSV</h2>
+        <div class="upload-card">
+            <p>Formato esperado: columnas con palabras clave <code>3_Fecha, 4_Finca, lat_6_Geolocalizacion, long_6_Geolocalizacion, 10_Brotes_hojas, 11_Hojas_adultas, 12_Limones, 13_Botones_florales, 14_Yemas, 15_Tecnico</code>.</p>
+            <div class="upload-area" id="dropZone">
+                <input type="file" id="csvFileInput" accept=".csv, text/csv">
+                <p>📂 Arrastra o <span class="upload-label" id="selectFileBtn">selecciona un archivo CSV</span></p>
+                <p class="badge" style="margin-top: 0.8rem;" id="fileSelected">Ningún archivo</p>
+            </div>
+            <button class="btn" id="btnSubirCSV" disabled>⏫ Procesar e insertar en base</button>
+            <div id="uploadStatus"></div>
+        </div>
+        <footer>© monitoreo ácaros</footer>
+    </main>
+
+    <script>
+        (function() {
+            const SUPABASE_URL = 'https://ossugwjyowdinerfnyam.supabase.co';
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zc3Vnd2p5b3dkaW5lcmZueWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODE5MzIsImV4cCI6MjA4Njk1NzkzMn0.AWT1Xw0Aw_yF8q5MrYM6o9tgTFNVNUd_4kbCAPiKuCI';
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            const csvInput = document.getElementById('csvFileInput');
+            const fileSelectedSpan = document.getElementById('fileSelected');
+            const btnSubir = document.getElementById('btnSubirCSV');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const dropZone = document.getElementById('dropZone');
+
+            let fincasMap = new Map();
+
+            // Cargar fincas para mapear nombres a ids
+            async function loadFincas() {
+                const { data } = await supabase.from('fincas').select('*');
+                if (data) data.forEach(f => fincasMap.set(f.nombre.toLowerCase().trim(), f.id));
+            }
+            loadFincas();
+
+            // Parseador CSV manual
+            function parseCSVLine(line) {
+                const result = [];
+                let start = 0;
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    if (line[i] === '"') inQuotes = !inQuotes;
+                    else if (line[i] === ',' && !inQuotes) {
+                        result.push(line.substring(start, i).replace(/^"|"$/g, '').trim());
+                        start = i + 1;
+                    }
+                }
+                result.push(line.substring(start).replace(/^"|"$/g, '').trim());
+                return result;
+            }
+
+            function parseCSV(texto) {
+                const lineas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
+                if (lineas.length === 0) return [];
+                const cabeceras = parseCSVLine(lineas[0]);
+                const idxFecha = cabeceras.findIndex(h => h.includes('3_Fecha') || h.includes('fecha'));
+                const idxFinca = cabeceras.findIndex(h => h.includes('4_Finca') || h.includes('finca'));
+                const idxLat = cabeceras.findIndex(h => h.includes('lat') && h.includes('Geolocalizacion'));
+                const idxLon = cabeceras.findIndex(h => h.includes('long') || (h.includes('lon') && h.includes('Geolocalizacion')));
+                const idxBrotes = cabeceras.findIndex(h => h.includes('10_Brotes') || h.includes('brotes'));
+                const idxHojas = cabeceras.findIndex(h => h.includes('11_Hojas') || h.includes('adultas'));
+                const idxLimones = cabeceras.findIndex(h => h.includes('12_Limones') || h.includes('limones'));
+                const idxBotones = cabeceras.findIndex(h => h.includes('13_Botones') || h.includes('botones'));
+                const idxYemas = cabeceras.findIndex(h => h.includes('14_Yemas') || h.includes('yemas'));
+                const idxTecnico = cabeceras.findIndex(h => h.includes('15_Tecnico') || h.includes('tecnico'));
+
+                const registros = [];
+                for (let i = 1; i < lineas.length; i++) {
+                    const valores = parseCSVLine(lineas[i]);
+                    if (valores.length < 2) continue;
+                    const fecha = valores[idxFecha] || '';
+                    const nombreFinca = valores[idxFinca] || '';
+                    const lat = parseFloat(valores[idxLat]);
+                    const lon = parseFloat(valores[idxLon]);
+                    const brotes = parseInt(valores[idxBrotes]) || 0;
+                    const hojas = parseInt(valores[idxHojas]) || 0;
+                    const limones = parseInt(valores[idxLimones]) || 0;
+                    const botones = parseInt(valores[idxBotones]) || 0;
+                    const yemas = parseInt(valores[idxYemas]) || 0;
+                    const tecnico = valores[idxTecnico] || '';
+
+                    if (isNaN(lat) || isNaN(lon)) continue;
+
+                    const finca_id = fincasMap.get(nombreFinca.toLowerCase().trim()) || null;
+
+                    registros.push({
+                        fecha: fecha || null,
+                        finca_id: finca_id,
+                        bloque_id: null,
+                        lat, lon,
+                        brotes_pos: brotes,
+                        hojas_adultas_pos: hojas,
+                        limones_pos: limones,
+                        botones_pos: botones,
+                        yemas_pos: yemas,
+                        tecnico: tecnico
+                    });
+                }
+                return registros;
+            }
+
+            async function procesarCSVYSubir(file) {
+                try {
+                    const text = await file.text();
+                    const registros = parseCSV(text);
+                    if (registros.length === 0) throw new Error('No se encontraron registros válidos');
+                    const { error } = await supabase.from('monitoreos').insert(registros);
+                    if (error) throw error;
+                    uploadStatus.innerHTML = `<div class="toast">✅ ${registros.length} registros insertados correctamente</div>`;
+                } catch (err) {
+                    uploadStatus.innerHTML = `<div class="toast error">❌ Error: ${err.message}</div>`;
+                }
+            }
+
+            // Eventos UI
+            dropZone.addEventListener('click', () => csvInput.click());
+            dropZone.addEventListener('dragover', (e) => e.preventDefault());
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type === 'text/csv') {
+                    csvInput.files = e.dataTransfer.files;
+                    fileSelectedSpan.textContent = `📄 ${file.name}`;
+                    btnSubir.disabled = false;
+                } else alert('Solo archivos CSV');
+            });
+            csvInput.addEventListener('change', () => {
+                if (csvInput.files.length) {
+                    fileSelectedSpan.textContent = `📄 ${csvInput.files[0].name}`;
+                    btnSubir.disabled = false;
+                } else {
+                    fileSelectedSpan.textContent = 'Ningún archivo';
+                    btnSubir.disabled = true;
+                }
+            });
+            btnSubir.addEventListener('click', async () => {
+                if (!csvInput.files[0]) return;
+                uploadStatus.innerHTML = '<div class="toast">⏳ Procesando...</div>';
+                await procesarCSVYSubir(csvInput.files[0]);
+                csvInput.value = '';
+                fileSelectedSpan.textContent = 'Ningún archivo';
+                btnSubir.disabled = true;
+            });
+        })();
+    </script>
+</body>
+</html>
