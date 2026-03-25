@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ácaros | Dashboard</title>
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
@@ -15,6 +14,7 @@
       <a class="active" href="index.html">Dashboard</a>
       <a href="exceles.html">Cargar Excel/CSV</a>
       <a href="informes.html">Informes</a>
+      <a href="control.html">Control</a>
       <a href="admin.html">Admin</a>
       <a href="#" id="btnLogout">Cerrar sesión</a>
     </nav>
@@ -23,7 +23,6 @@
   <main class="container">
     <section class="panel">
       <h1>Dashboard</h1>
-
       <div class="filters">
         <label>
           Fecha
@@ -33,36 +32,24 @@
             <option value="custom">Rango personalizado</option>
           </select>
         </label>
-
-        <label>
-          Desde
-          <input id="dateFrom" type="date" />
-        </label>
-
-        <label>
-          Hasta
-          <input id="dateTo" type="date" />
-        </label>
-
+        <label>Desde <input id="dateFrom" type="date" /></label>
+        <label>Hasta  <input id="dateTo"   type="date" /></label>
         <label>
           Finca
           <select id="fincaSelect">
             <option value="">Todas</option>
           </select>
         </label>
-
         <label>
           Bloque
           <select id="bloqueSelect" disabled>
             <option value="">Todos</option>
           </select>
         </label>
-
         <label>
           Técnico (opcional)
           <input id="tecnicoInput" type="text" placeholder="Nombre" />
         </label>
-
         <button id="btnRefresh" class="btn">Actualizar</button>
       </div>
     </section>
@@ -71,7 +58,10 @@
       <section class="panel">
         <h2>Mapa</h2>
         <div id="map" class="map"></div>
-        <div class="hint">Severidad = ((brotes+hojas+limones+botones+yemas)/60)*100</div>
+        <div class="hint">
+          Severidad = ((brotes+hojas+limones+botones+yemas)/60)×100 &nbsp;|&nbsp;
+          <span style="color:#ff0000;font-weight:600">Borde rojo</span> = alta severidad + &gt;21 días sin control
+        </div>
       </section>
 
       <section class="panel">
@@ -85,6 +75,7 @@
                 <th>Bloque</th>
                 <th>Técnico</th>
                 <th>Sev%</th>
+                <th>Días sin ctrl</th>
                 <th>Lat</th>
                 <th>Lon</th>
               </tr>
@@ -92,13 +83,11 @@
             <tbody></tbody>
           </table>
         </div>
-
         <div class="pager">
           <button id="prevPage" class="btn btnLight">◀</button>
           <div id="pageInfo" class="muted">-</div>
           <button id="nextPage" class="btn btnLight">▶</button>
         </div>
-
         <div id="status" class="status"></div>
       </section>
     </section>
@@ -106,7 +95,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-
   <script type="module" src="assets/js/dashboard.js"></script>
 </body>
 </html>
