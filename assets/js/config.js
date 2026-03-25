@@ -1,2 +1,2 @@
 export const SUPABASE_URL = "https://gqvyavoaaemqbproffeq.supabase.co";
-export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...ByQ8LnS7h-t58ZnryTAjuyzEeF8SgO7LE8x-KFfFHEI";
+export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdxdnlhdm9hYWVtcWJwcm9mZmVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTcyMzUsImV4cCI6MjA5MDAzMzIzNX0.ByQ8LnS7h-t58ZnryTAjuyzEeF8SgO7LE8x-KFfFHEI";
