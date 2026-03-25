@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ácaros | Control</title>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Monitoreo Ácaros</div>
+    <nav class="nav">
+      <a href="index.html">Dashboard</a>
+      <a href="exceles.html">Cargar Excel/CSV</a>
+      <a href="informes.html">Informes</a>
+      <a class="active" href="control.html">Control</a>
+      <a href="admin.html">Admin</a>
+      <a href="#" id="btnLogout">Cerrar sesión</a>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <!-- ── Formulario de registro ── -->
+    <section class="panel">
+      <h1>Aplicaciones de Control</h1>
+      <p class="hint">Registra las fechas y detalles de cada aplicación de control de ácaros por campo/bloque.</p>
+
+      <form id="formControl" class="filters" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));align-items:end;">
+        <label>Finca *
+          <select id="fincaSel" required>
+            <option value="">Seleccionar…</option>
+          </select>
+        </label>
+        <label>Bloque
+          <select id="bloqueSel" disabled>
+            <option value="">Todos / N/A</option>
+          </select>
+        </label>
+        <label>Fecha aplicación *
+          <input id="fechaApl" type="date" required />
+        </label>
+        <label>Producto
+          <input id="producto" type="text" placeholder="Ej: Abamectina" />
+        </label>
+        <label>Dosis
+          <input id="dosis" type="text" placeholder="Ej: 1 L/ha" />
+        </label>
+        <label>Técnico
+          <input id="tecnico" type="text" placeholder="Nombre" />
+        </label>
+        <label style="grid-column:span 2;">Notas
+          <input id="notas" type="text" placeholder="Observaciones opcionales" />
+        </label>
+        <label>
+          <button type="submit" class="btn" id="btnGuardar">Guardar</button>
+        </label>
+      </form>
+      <div id="status" class="status"></div>
+    </section>
+
+    <!-- ── Tabla de registros ── -->
+    <section class="panel">
+      <h2>Historial de aplicaciones</h2>
+      <div class="filters" style="margin-bottom:12px;">
+        <label>Finca
+          <select id="filtroFinca"><option value="">Todas</option></select>
+        </label>
+        <label>Desde <input id="filtroDesde" type="date" /></label>
+        <label>Hasta  <input id="filtroHasta" type="date" /></label>
+        <button id="btnFiltrar" class="btn btnLight">Filtrar</button>
+      </div>
+      <div class="tableWrap">
+        <table class="table" id="tblControl">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Finca</th>
+              <th>Bloque</th>
+              <th>Producto</th>
+              <th>Dosis</th>
+              <th>Técnico</th>
+              <th>Notas</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+  <script type="module" src="assets/js/control.js"></script>
+</body>
+</html>
