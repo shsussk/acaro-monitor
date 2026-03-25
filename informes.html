@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ácaros | Informes</title>
-
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
@@ -14,6 +13,7 @@
       <a href="index.html">Dashboard</a>
       <a href="exceles.html">Cargar Excel/CSV</a>
       <a class="active" href="informes.html">Informes</a>
+      <a href="control.html">Control</a>
       <a href="admin.html">Admin</a>
     </nav>
   </header>
@@ -21,7 +21,6 @@
   <main class="container">
     <section class="panel">
       <h1>Informes</h1>
-
       <div class="filters">
         <label>
           Fecha
@@ -31,41 +30,70 @@
             <option value="custom">Rango personalizado</option>
           </select>
         </label>
-
         <label>Desde <input id="dateFrom" type="date" disabled /></label>
-        <label>Hasta <input id="dateTo" type="date" disabled /></label>
-
+        <label>Hasta  <input id="dateTo"   type="date" disabled /></label>
         <label>
           Finca
           <select id="fincaSelect"><option value="">Todas</option></select>
         </label>
-
         <label>
           Bloque
           <select id="bloqueSelect" disabled><option value="">Todos</option></select>
         </label>
-
-        <button id="btnRefresh" class="btn">Actualizar</button>
+        <button id="btnRefresh"   class="btn">Actualizar</button>
         <button id="btnExportPDF" class="btn">Generar Informe Semanal (PDF)</button>
       </div>
-
       <div class="kpis">
         <div class="kpi"><div class="kpiLabel">Registros</div><div id="kpiReg" class="kpiValue">-</div></div>
         <div class="kpi"><div class="kpiLabel">Severidad promedio</div><div id="kpiSev" class="kpiValue">-</div></div>
+        <div class="kpi"><div class="kpiLabel">Bloques sin control &gt;21d</div><div id="kpiAlert" class="kpiValue" style="color:#ff4d6d">-</div></div>
       </div>
     </section>
 
     <section class="grid2">
+
+      <!-- Tendencia diaria -->
       <section class="panel">
-        <h2>Tendencia (promedio diario)</h2>
+        <h2>Tendencia de severidad (promedio diario)</h2>
         <canvas id="trendChart" height="120"></canvas>
       </section>
 
+      <!-- Severidad por finca -->
       <section class="panel">
         <h2>Severidad promedio por finca (desglose por órgano)</h2>
         <canvas id="fincaChart" height="120"></canvas>
       </section>
 
+      <!-- ── NUEVO: Comparación severidad vs. aplicaciones ── -->
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h2>Severidad vs. Aplicaciones de control</h2>
+        <p class="hint">Línea = severidad promedio diaria. Barras verticales = fechas de aplicación de control.</p>
+        <canvas id="controlChart" height="100"></canvas>
+      </section>
+
+      <!-- ── NUEVO: Bloques críticos ── -->
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h2>🚨 Bloques críticos (alta severidad + sin control reciente)</h2>
+        <p class="hint">Bloques con severidad promedio ≥33% y más de 21 días sin aplicación registrada.</p>
+        <div class="tableWrap">
+          <table class="table" id="criticalTbl">
+            <thead>
+              <tr>
+                <th>Finca</th>
+                <th>Bloque</th>
+                <th>Sev% prom.</th>
+                <th>Registros</th>
+                <th>Última aplicación</th>
+                <th>Días sin control</th>
+                <th>Acción recomendada</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Top 5 más severos -->
       <section class="panel">
         <h2>Top 5 puntos más severos</h2>
         <div class="tableWrap">
@@ -80,6 +108,7 @@
         </div>
       </section>
 
+      <!-- Priorización -->
       <section class="panel">
         <h2>Priorización de campos a aplicar</h2>
         <div class="tableWrap">
@@ -94,7 +123,8 @@
         </div>
       </section>
 
-      <section class="panel">
+      <!-- Resumen por finca/bloque -->
+      <section class="panel" style="grid-column: 1 / -1;">
         <h2>Resumen por finca/bloque</h2>
         <div class="tableWrap">
           <table class="table" id="sumTbl">
@@ -108,13 +138,13 @@
         </div>
         <div id="status" class="status"></div>
       </section>
+
     </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-
   <script type="module" src="assets/js/reports.js"></script>
 </body>
 </html>
