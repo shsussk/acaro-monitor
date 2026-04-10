@@ -34,7 +34,7 @@ export async function fetchMonitoreos(filters, { page=0, pageSize=200 } = {}){
 
   let q = supabase
     .from("monitoreos")
-    .select("id,fecha,lat,lon,tecnico,brotes_pos,hojas_adultas_pos,limones_pos,botones_pos,yemas_pos,finca_id,bloque_id,fincas(nombre),bloques(nombre)", { count: "exact" })
+    .select("id,fecha,lat,lon,tecnico,brotes_hojas,hojas_adultas,brotes_limones,botones_florales,finca_id,bloque_id,fincas(nombre),bloques(nombre)", { count: "exact" })
     .order("fecha", { ascending: false })
     .range(from, to);
 
@@ -49,7 +49,7 @@ export async function fetchMonitoreosAll(filters, { limit=10000 } = {}){
   // para informes: trae un volumen razonable (por defecto 10k)
   let q = supabase
     .from("monitoreos")
-    .select("id,fecha,lat,lon,tecnico,brotes_pos,hojas_adultas_pos,limones_pos,botones_pos,yemas_pos,finca_id,bloque_id,fincas(nombre),bloques(nombre)")
+    .select("id,fecha,lat,lon,tecnico,brotes_hojas,hojas_adultas,brotes_limones,botones_florales,finca_id,bloque_id,fincas(nombre),bloques(nombre)")
     .order("fecha", { ascending: true })
     .limit(limit);
 
