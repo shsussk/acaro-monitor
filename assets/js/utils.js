@@ -61,8 +61,8 @@ export function parseDateFlexible(v){
 }
 
 export function severityPct(row){
-  const sum = (row.brotes_pos||0) + (row.hojas_adultas_pos||0) + (row.limones_pos||0) + (row.botones_pos||0) + (row.yemas_pos||0);
-  return (sum / 60) * 100;
+  const sum = (row.brotes_hojas||0) + (row.hojas_adultas||0) + (row.brotes_limones||0) + (row.botones_florales||0);
+  return (sum / 48) * 100;
 }
 
 export function clamp01(x){
