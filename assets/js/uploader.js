@@ -354,13 +354,11 @@ async function normalizeAndValidate(rawRows) {
       continue;
     }
 
-    // Validar lat/lon
-    const lat = toFloat(latRaw);
-    const lon = toFloat(lonRaw);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      errors.push({ rowNum, reason: "Lat/Lon inválidas", data: `lat=${latRaw} lon=${lonRaw}` });
-      continue;
-    }
+    // Lat/Lon opcionales: si están vacías se guardan como null
+    const latParsed = toFloat(latRaw);
+    const lonParsed = toFloat(lonRaw);
+    const lat = (Number.isFinite(latParsed) && latParsed >= -90  && latParsed <= 90)  ? latParsed : null;
+    const lon = (Number.isFinite(lonParsed) && lonParsed >= -180 && lonParsed <= 180) ? lonParsed : null;
 
     // Bloque (o crearlo automáticamente)
     let bloque_id = null;
@@ -388,17 +386,17 @@ async function normalizeAndValidate(rawRows) {
       botones_florales: Math.max(0, toInt(botonesRaw, 0)),
     };
 
-    // fingerprint estable
-    const fp = [
+    // fingerprint estable: usa número de fila original del archivo para garantizar unicidad
+    row.fingerprint = [
       row.fecha,
       row.finca_id,
       row.bloque_id ?? "",
-      Number(row.lat).toFixed(6),
-      Number(row.lon).toFixed(6),
+      Number.isFinite(row.lat) ? Number(row.lat).toFixed(6) : "",
+      Number.isFinite(row.lon) ? Number(row.lon).toFixed(6) : "",
       normalizeText(row.tecnico ?? ""),
+      rowNum,
     ].join("|");
 
-    row.fingerprint = fp;
     valid.push(row);
   }
 
@@ -515,4 +513,3 @@ function sanitizeFileName(name) {
     .replace(/[^\w.\-]+/g, "_")
     .slice(0, 140);
 }
-
