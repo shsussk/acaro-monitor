@@ -265,28 +265,26 @@ function renderFincaSeverity(rows) {
   for (const r of rows) {
     const finca = r.fincas?.nombre ?? String(r.finca_id ?? "");
     if (!byFinca.has(finca))
-      byFinca.set(finca, { brotes: [], hojas: [], limones: [], botones: [], yemas: [], general: [] });
+      byFinca.set(finca, { brotes_hojas: [], hojas_adultas: [], brotes_limones: [], botones_florales: [], general: [] });
 
     const f     = byFinca.get(finca);
-    const total = (r.brotes_pos || 0) + (r.hojas_adultas_pos || 0) + (r.limones_pos || 0)
-                + (r.botones_pos || 0) + (r.yemas_pos || 0);
-    f.brotes.push((r.brotes_pos        / 12) * 100);
-    f.hojas.push( (r.hojas_adultas_pos / 12) * 100);
-    f.limones.push((r.limones_pos      / 12) * 100);
-    f.botones.push((r.botones_pos      / 12) * 100);
-    f.yemas.push(  (r.yemas_pos        / 12) * 100);
-    f.general.push((total              / 60) * 100);
+    const total = (r.brotes_hojas || 0) + (r.hojas_adultas || 0) + (r.brotes_limones || 0)
+                + (r.botones_florales || 0);
+    f.brotes_hojas.push(   (r.brotes_hojas    / 12) * 100);
+    f.hojas_adultas.push(  (r.hojas_adultas   / 12) * 100);
+    f.brotes_limones.push( (r.brotes_limones  / 12) * 100);
+    f.botones_florales.push((r.botones_florales/ 12) * 100);
+    f.general.push(        (total             / 48) * 100);
   }
 
   const fincaNames = Array.from(byFinca.keys()).sort();
   const avg        = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
   const datasets = [
-    { label: "Brotes",            data: fincaNames.map((f) => avg(byFinca.get(f).brotes).toFixed(1)),  backgroundColor: "#ff6384" },
-    { label: "Hojas",             data: fincaNames.map((f) => avg(byFinca.get(f).hojas).toFixed(1)),   backgroundColor: "#36a2eb" },
-    { label: "Limones",           data: fincaNames.map((f) => avg(byFinca.get(f).limones).toFixed(1)), backgroundColor: "#ffce56" },
-    { label: "Botones",           data: fincaNames.map((f) => avg(byFinca.get(f).botones).toFixed(1)), backgroundColor: "#4bc0c0" },
-    { label: "Yemas",             data: fincaNames.map((f) => avg(byFinca.get(f).yemas).toFixed(1)),   backgroundColor: "#9966ff" },
+    { label: "Brotes hojas",      data: fincaNames.map((f) => avg(byFinca.get(f).brotes_hojas).toFixed(1)),    backgroundColor: "#ff6384" },
+    { label: "Hojas adultas",     data: fincaNames.map((f) => avg(byFinca.get(f).hojas_adultas).toFixed(1)),   backgroundColor: "#36a2eb" },
+    { label: "Brotes limones",    data: fincaNames.map((f) => avg(byFinca.get(f).brotes_limones).toFixed(1)),  backgroundColor: "#ffce56" },
+    { label: "Botones florales",  data: fincaNames.map((f) => avg(byFinca.get(f).botones_florales).toFixed(1)),backgroundColor: "#4bc0c0" },
     { label: "Severidad General", data: fincaNames.map((f) => avg(byFinca.get(f).general).toFixed(1)), backgroundColor: "#ff9f40" },
   ];
 
