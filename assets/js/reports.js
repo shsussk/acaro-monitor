@@ -149,19 +149,21 @@ async function refresh() {
   }
 
   // ── Resumen por finca/bloque ───────────────────────────
+  // Proporción agrupada: Σ unidades afectadas / (n × 48) × 100
+  // Evita distorsión por número desigual de muestras por fecha.
   const agg = new Map();
   for (const r of rows) {
     const finca  = r.fincas?.nombre  ?? String(r.finca_id  ?? "");
     const bloque = r.bloques?.nombre ?? (r.bloque_id ? String(r.bloque_id) : "");
     const key    = `${finca}||${bloque}`;
-    const sev    = severityPct(r);
-    if (!agg.has(key)) agg.set(key, { finca, bloque, finca_id: r.finca_id, bloque_id: r.bloque_id, n: 0, sum: 0 });
+    const unid   = (r.brotes_hojas||0) + (r.hojas_adultas||0) + (r.brotes_limones||0) + (r.botones_florales||0);
+    if (!agg.has(key)) agg.set(key, { finca, bloque, finca_id: r.finca_id, bloque_id: r.bloque_id, n: 0, sum_unid: 0 });
     const a = agg.get(key);
-    a.n   += 1;
-    a.sum += sev;
+    a.n        += 1;
+    a.sum_unid += unid;
   }
   const summary = Array.from(agg.values())
-    .map((a) => ({ ...a, avg: a.n ? a.sum / a.n : 0 }))
+    .map((a) => ({ ...a, avg: a.n ? (a.sum_unid / (a.n * 48)) * 100 : 0 }))
     .sort((a, b) => b.avg - a.avg);
 
   const sumBody = document.querySelector("#sumTbl tbody");
@@ -181,16 +183,18 @@ async function refresh() {
   renderPriorizacion(summary);
 
   // ── Tendencia diaria ──────────────────────────────────
+  // Proporción agrupada por día: Σ unidades afectadas / (n × 48) × 100
   const byDay = new Map();
   for (const r of rows) {
-    const d   = r.fecha;
-    const sev = severityPct(r);
-    if (!byDay.has(d)) byDay.set(d, { n: 0, sum: 0 });
+    const d    = r.fecha;
+    const unid = (r.brotes_hojas||0) + (r.hojas_adultas||0) + (r.brotes_limones||0) + (r.botones_florales||0);
+    if (!byDay.has(d)) byDay.set(d, { n: 0, sum_unid: 0 });
     const a = byDay.get(d);
-    a.n += 1; a.sum += sev;
+    a.n        += 1;
+    a.sum_unid += unid;
   }
   const days = Array.from(byDay.entries())
-    .map(([d, a]) => ({ d, avg: a.sum / a.n, n: a.n }))
+    .map(([d, a]) => ({ d, avg: a.n ? (a.sum_unid / (a.n * 48)) * 100 : 0, n: a.n }))
     .sort((x, y) => x.d.localeCompare(y.d));
 
   renderTrend(days);
