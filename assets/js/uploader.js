@@ -80,6 +80,54 @@ async function loadCatalogs() {
   }
 }
 
+// Crea una finca si no existe y la agrega al catálogo en memoria
+async function getOrCreateFinca(nombreRaw) {
+  const norm = normalizeText(nombreRaw);
+  if (fincaByNormName.has(norm)) return fincaByNormName.get(norm);
+
+  const nombre = String(nombreRaw).trim();
+  const { data, error } = await supabase
+    .from("fincas")
+    .insert({ nombre })
+    .select("id, nombre")
+    .single();
+
+  if (error) throw new Error(`No se pudo crear la finca "${nombre}": ${error.message}`);
+
+  fincaByNormName.set(norm, data);
+  bloquesByFinca.set(data.id, new Map());
+  fincas.push(data);
+  return data;
+}
+
+// Crea un bloque si no existe y lo agrega al catálogo en memoria
+async function getOrCreateBloque(finca, nombreRaw) {
+  const norm = normalizeText(nombreRaw);
+  const bMap = bloquesByFinca.get(finca.id) ?? new Map();
+
+  if (bMap.has(norm)) return bMap.get(norm);
+
+  // alias numérico: "1" -> "Bloque 1"
+  const numMatch = String(nombreRaw).match(/(\d+)/);
+  if (numMatch && bMap.has(normalizeText(numMatch[1]))) {
+    return bMap.get(normalizeText(numMatch[1]));
+  }
+
+  const nombre = String(nombreRaw).trim();
+  const { data, error } = await supabase
+    .from("bloques")
+    .insert({ finca_id: finca.id, nombre })
+    .select("id, nombre")
+    .single();
+
+  if (error) throw new Error(`No se pudo crear el bloque "${nombre}": ${error.message}`);
+
+  bMap.set(norm, data.id);
+  if (numMatch) bMap.set(normalizeText(numMatch[1]), data.id);
+  bloquesByFinca.set(finca.id, bMap);
+  return data.id;
+}
+
 async function processAndUpload(file) {
   clearErrors();
   setProgress(0);
@@ -159,7 +207,7 @@ async function processAndUpload(file) {
   }
 
   // 5) Normalizar/validar
-  const { valid, errors } = normalizeAndValidate(rows);
+  const { valid, errors } = await normalizeAndValidate(rows);
 
   // Adjuntar upload_id y uploaded_by a cada fila válida (para trazabilidad y borrado por carga)
   for (const r of valid) {
@@ -266,7 +314,7 @@ function pick(obj, keys) {
   return undefined;
 }
 
-function normalizeAndValidate(rawRows) {
+async function normalizeAndValidate(rawRows) {
   const valid = [];
   const errors = [];
 
@@ -274,32 +322,39 @@ function normalizeAndValidate(rawRows) {
     const r = rawRows[idx];
     const rowNum = idx + 2; // header fila 1
 
-    const fechaRaw = pick(r, ["Fecha", "FECHA", "date", "DATE"]);
-    const fincaRaw = pick(r, ["Finca", "FINCA", "Farm", "FARM"]);
+    const fechaRaw  = pick(r, ["Fecha", "FECHA", "date", "DATE"]);
+    const fincaRaw  = pick(r, ["Finca", "FINCA", "Farm", "FARM"]);
     const bloqueRaw = pick(r, ["Bloque", "BLOQUE", "Block", "BLOCK"]);
-    const latRaw = pick(r, ["Lat", "LAT", "Latitud", "LATITUD", "Latitude", "LATITUDE"]);
-    const lonRaw = pick(r, ["Lon", "LON", "Longitud", "LONGITUD", "Lng", "LNG", "Longitude", "LONGITUDE"]);
+    const latRaw    = pick(r, ["Lat", "LAT", "Latitud", "LATITUD", "Latitude", "LATITUDE"]);
+    const lonRaw    = pick(r, ["Lon", "LON", "Longitud", "LONGITUD", "Lng", "LNG", "Longitude", "LONGITUDE"]);
 
-    const tecnicoRaw = pick(r, ["Técnico", "Tecnico", "TECNICO", "Tecnico/a", "TECNICO/A", "Technician"]);
-    const brotesRaw = pick(r, ["Brotes", "BROTES", "brotes_pos", "BROTES_POS"]);
-    const hojasRaw = pick(r, ["Hojas", "HOJAS", "hojas_adultas_pos", "HOJAS_ADULTAS_POS", "Hojas_adultas"]);
-    const limonesRaw = pick(r, ["Limones", "LIMONES", "limones_pos", "LIMONES_POS"]);
-    const botonesRaw = pick(r, ["Botones", "BOTONES", "botones_pos", "BOTONES_POS"]);
-    const yemasRaw = pick(r, ["Yemas", "YEMAS", "yemas_pos", "YEMAS_POS"]);
+    const tecnicoRaw       = pick(r, ["Técnico", "Tecnico", "TECNICO", "Tecnico/a", "TECNICO/A", "Technician"]);
+    const brotesHojasRaw   = pick(r, ["BrotesHojas", "Brotes hojas", "BROTES_HOJAS", "brotes_hojas", "Brotes", "BROTES"]);
+    const hojasRaw         = pick(r, ["HojasAdultas", "Hojas adultas", "HOJAS_ADULTAS", "hojas_adultas", "Hojas", "HOJAS"]);
+    const brotesLimonesRaw = pick(r, ["BrotesLimones", "Brotes limones", "BROTES_LIMONES", "brotes_limones", "Limones", "LIMONES"]);
+    const botonesRaw       = pick(r, ["BotonesFlorales", "Botones florales", "BOTONES_FLORALES", "botones_florales", "Botones", "BOTONES"]);
 
+    // Validar fecha
     const fecha = parseDateFlexible(fechaRaw);
     if (!fecha || !isValidISODate(fecha)) {
       errors.push({ rowNum, reason: "Fecha inválida", data: String(fechaRaw ?? "") });
       continue;
     }
 
-    const fincaNameNorm = normalizeText(fincaRaw);
-    const finca = fincaByNormName.get(fincaNameNorm);
-    if (!finca) {
-      errors.push({ rowNum, reason: "Finca no encontrada en catálogo", data: String(fincaRaw ?? "") });
+    // Validar finca (o crearla automáticamente)
+    if (!String(fincaRaw ?? "").trim()) {
+      errors.push({ rowNum, reason: "Finca vacía", data: "" });
+      continue;
+    }
+    let finca;
+    try {
+      finca = await getOrCreateFinca(fincaRaw);
+    } catch (e) {
+      errors.push({ rowNum, reason: e.message, data: String(fincaRaw ?? "") });
       continue;
     }
 
+    // Validar lat/lon
     const lat = toFloat(latRaw);
     const lon = toFloat(lonRaw);
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
@@ -307,15 +362,15 @@ function normalizeAndValidate(rawRows) {
       continue;
     }
 
+    // Bloque (o crearlo automáticamente)
     let bloque_id = null;
     if (String(bloqueRaw ?? "").trim()) {
-      const bMap = bloquesByFinca.get(finca.id);
-      const bid = bMap?.get(normalizeText(bloqueRaw));
-      if (!bid) {
-        errors.push({ rowNum, reason: "Bloque no encontrado para esa finca", data: String(bloqueRaw ?? "") });
+      try {
+        bloque_id = await getOrCreateBloque(finca, bloqueRaw);
+      } catch (e) {
+        errors.push({ rowNum, reason: e.message, data: String(bloqueRaw ?? "") });
         continue;
       }
-      bloque_id = bid;
     }
 
     const tecnico = String(tecnicoRaw ?? "").trim() || null;
@@ -327,11 +382,10 @@ function normalizeAndValidate(rawRows) {
       lat,
       lon,
       tecnico,
-      brotes_pos: Math.max(0, toInt(brotesRaw, 0)),
-      hojas_adultas_pos: Math.max(0, toInt(hojasRaw, 0)),
-      limones_pos: Math.max(0, toInt(limonesRaw, 0)),
-      botones_pos: Math.max(0, toInt(botonesRaw, 0)),
-      yemas_pos: Math.max(0, toInt(yemasRaw, 0)),
+      brotes_hojas:     Math.max(0, toInt(brotesHojasRaw, 0)),
+      hojas_adultas:    Math.max(0, toInt(hojasRaw, 0)),
+      brotes_limones:   Math.max(0, toInt(brotesLimonesRaw, 0)),
+      botones_florales: Math.max(0, toInt(botonesRaw, 0)),
     };
 
     // fingerprint estable
