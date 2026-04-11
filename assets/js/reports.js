@@ -9,15 +9,47 @@ import {
   fetchAplicaciones,
   fetchUltimaAplicacionPorBloque,
 } from "./data.js";
-import { severityPct, downloadText } from "./utils.js";
+import { downloadText } from "./utils.js";
 
-const DIAS_ALERTA = 21; // días sin control para considerar bloque crítico
+// ─────────────────────────────────────────────────────────────────────────────
+// METODOLOGÍA
+// Monitoreo binomial de ácaro en limones.
+// Cada árbol se evalúa en 4 puntos cardinales × 3 unidades = 12 unidades
+// por estructura. El técnico registra cuántas de las 12 tienen ácaro (0–12).
+//
+// Fórmula de severidad individual:
+//   Sev (%) = (unidades_afectadas / 12) × 100   por estructura
+//
+// Fórmula de severidad poblacional (proporción agrupada por bloque/semana):
+//   Sev_pob (%) = Σ(afectadas) / (n × 12) × 100
+//   Equivale al AVERAGEIFS de severidades individuales cuando el denominador
+//   es siempre 12 — matemáticamente idénticos.
+//
+// Estructura principal: hojas_adultas (99 % de completitud en campo).
+// Las demás estructuras dependen de la fenología y se reportan cuando hay dato.
+//
+// Umbrales definidos:
+//   < 25 %  → Monitoreo  (rutina)
+//   25–42 % → Alerta     (aumentar frecuencia)
+//   42–67 % → Intervención (aplicar control)
+//   ≥ 67 %  → Crítico    (control urgente)
+//
+// Umbral poblacional de acción por semana/bloque:
+//   • Sev_pob hojas_adultas ≥ 42 %  →  intervención
+//   • ≥ 30 % de plantas con sev ≥ 42 % en la semana  →  intervención
+//   • ≥ 15 % de plantas con sev ≥ 67 %               →  urgente
+// ─────────────────────────────────────────────────────────────────────────────
 
-let fincas      = [];
+const U_ALERT = 25;   // umbral alerta
+const U_INT   = 42;   // umbral intervención
+const U_CRIT  = 67;   // umbral crítico
+const DIAS_ALERTA = 21;  // días sin control para marcar bloque crítico
+
+let fincas       = [];
 let bloquesCache = new Map();
 let trendChart   = null;
 let fincaChart   = null;
-let controlChart = null;  // ← nuevo: gráfico dual severidad vs. aplicaciones
+let controlChart = null;
 let lastRows     = [];
 let lastFilters  = {};
 
@@ -28,6 +60,82 @@ async function init() {
   await loadCatalogs();
   await refresh();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS DE SEVERIDAD
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Severidad individual de un registro por estructura.
+ * Retorna null si la estructura no fue evaluada en esa visita.
+ */
+function sevEstructura(valor) {
+  if (valor === null || valor === undefined) return null;
+  return (valor / 12) * 100;
+}
+
+/**
+ * Severidad individual del registro basada en hojas_adultas (estructura principal).
+ * Usada para ranking, Top 5 y KPIs individuales.
+ */
+function sevIndividual(r) {
+  const ha = sevEstructura(r.hojas_adultas);
+  return ha !== null ? ha : null;
+}
+
+/**
+ * Severidad general del registro considerando solo estructuras con dato real.
+ * Denominador = n_estructuras_con_dato × 12.
+ * NO usa 48 fijo porque no siempre se evalúan las 4 estructuras.
+ */
+function sevGeneral(r) {
+  const vals = [r.brotes_hojas, r.hojas_adultas, r.brotes_limones, r.botones_florales]
+    .filter(v => v !== null && v !== undefined);
+  if (!vals.length) return null;
+  const suma  = vals.reduce((s, v) => s + v, 0);
+  const denom = vals.length * 12;
+  return (suma / denom) * 100;
+}
+
+/**
+ * Nivel de severidad según umbrales definidos.
+ * Se basa en hojas_adultas como estructura principal.
+ * Si no hay dato de hojas_adultas, usa severidad general.
+ */
+function nivelSeveridad(sev) {
+  if (sev === null || sev === undefined) return "Sin dato";
+  if (sev >= U_CRIT) return "Crítico";
+  if (sev >= U_INT)  return "Intervención";
+  if (sev >= U_ALERT) return "Alerta";
+  return "Monitoreo";
+}
+
+/**
+ * Proporción agrupada poblacional para un array de registros y una estructura.
+ * Sev_pob = Σ(afectadas) / (n_con_dato × 12) × 100
+ * Retorna null si no hay ningún dato de esa estructura.
+ */
+function sevPoblacional(rows, campo) {
+  const conDato = rows.filter(r => r[campo] !== null && r[campo] !== undefined);
+  if (!conDato.length) return null;
+  const suma = conDato.reduce((s, r) => s + r[campo], 0);
+  return (suma / (conDato.length * 12)) * 100;
+}
+
+/**
+ * % de registros cuya severidad de hojas_adultas supera un umbral.
+ * Usado para el criterio poblacional de intervención.
+ */
+function pctSobreUmbral(rows, umbral) {
+  const conDato = rows.filter(r => r.hojas_adultas !== null && r.hojas_adultas !== undefined);
+  if (!conDato.length) return 0;
+  const sobre = conDato.filter(r => (r.hojas_adultas / 12) * 100 >= umbral).length;
+  return (sobre / conDato.length) * 100;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI
+// ─────────────────────────────────────────────────────────────────────────────
 
 function setupUI() {
   const datePreset = document.getElementById("datePreset");
@@ -108,12 +216,15 @@ function getFilters() {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// REFRESH PRINCIPAL
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function refresh() {
   setStatus("Cargando…");
   const filters = getFilters();
   lastFilters = filters;
 
-  // Cargar datos en paralelo
   const [rows, aplicaciones, ultimasAplicaciones] = await Promise.all([
     fetchMonitoreosAll(filters, { limit: 10000 }),
     fetchAplicaciones({ finca_id: filters.finca_id, dateFrom: filters.dateFrom, dateTo: filters.dateTo }),
@@ -121,51 +232,96 @@ async function refresh() {
   ]);
   lastRows = rows;
 
-  // ── KPIs ──────────────────────────────────────────────
-  const sevs   = rows.map(severityPct);
-  const avg    = sevs.length ? sevs.reduce((a, b) => a + b, 0) / sevs.length : 0;
-  document.getElementById("kpiReg").textContent = rows.length;
-  document.getElementById("kpiSev").textContent = `${avg.toFixed(1)}%`;
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  // Severidad poblacional de hojas_adultas (estructura principal, más completa)
+  const sevPobHA = sevPoblacional(rows, "hojas_adultas");
+  // % plantas en nivel crítico (para el KPI de alerta)
+  const pctCrit  = pctSobreUmbral(rows, U_CRIT);
+  const nHA      = rows.filter(r => r.hojas_adultas !== null && r.hojas_adultas !== undefined).length;
 
-  // ── Top 5 ─────────────────────────────────────────────
+  document.getElementById("kpiReg").textContent = rows.length;
+  document.getElementById("kpiSev").textContent =
+    sevPobHA !== null ? `${sevPobHA.toFixed(1)}%` : "Sin datos";
+  // Nota: kpiSev muestra severidad poblacional de hojas adultas, no promedio aritmético
+
+  // ── Resumen por finca/bloque ───────────────────────────────────────────────
+  // Proporción agrupada por bloque para hojas_adultas (estructura principal).
+  // También calculamos para las otras estructuras cuando haya dato suficiente.
+  const agg = new Map();
+  for (const r of rows) {
+    const finca  = r.fincas?.nombre  ?? String(r.finca_id  ?? "");
+    const bloque = r.bloques?.nombre ?? (r.bloque_id ? String(r.bloque_id) : "");
+    const key    = `${finca}||${bloque}`;
+
+    if (!agg.has(key))
+      agg.set(key, {
+        finca, bloque,
+        finca_id:  r.finca_id,
+        bloque_id: r.bloque_id,
+        rows: [],
+      });
+    agg.get(key).rows.push(r);
+  }
+
+  const summary = Array.from(agg.values()).map((a) => {
+    const sevHA  = sevPoblacional(a.rows, "hojas_adultas");    // principal
+    const sevBH  = sevPoblacional(a.rows, "brotes_hojas");     // cuando hay dato
+    const sevFR  = sevPoblacional(a.rows, "brotes_limones");
+    const sevBF  = sevPoblacional(a.rows, "botones_florales");
+
+    // Nivel poblacional basado en hojas_adultas
+    const nivel  = nivelSeveridad(sevHA);
+
+    // % plantas sobre cada umbral (para el criterio de intervención semanal)
+    const pctInterv = pctSobreUmbral(a.rows, U_INT);
+    const pctCritico = pctSobreUmbral(a.rows, U_CRIT);
+
+    // Incidencia: % de árboles con al menos 1 hoja adulta afectada
+    // (nota: históricamente ~99% — la severidad es el discriminador útil)
+    const conHA    = a.rows.filter(r => r.hojas_adultas !== null && r.hojas_adultas !== undefined);
+    const incHA    = conHA.length
+      ? (conHA.filter(r => r.hojas_adultas > 0).length / conHA.length) * 100
+      : null;
+
+    return {
+      finca: a.finca, bloque: a.bloque,
+      finca_id: a.finca_id, bloque_id: a.bloque_id,
+      n: a.rows.length,
+      nHA: conHA.length,
+      sevHA, sevBH, sevFR, sevBF,
+      nivel, pctInterv, pctCritico, incHA,
+      // avg expuesto para compatibilidad con funciones de renderizado
+      avg: sevHA ?? 0,
+    };
+  }).sort((a, b) => (b.sevHA ?? 0) - (a.sevHA ?? 0));
+
+  // ── Top 5 ─────────────────────────────────────────────────────────────────
+  // Ranking por severidad de hojas_adultas (estructura principal y más completa).
+  // No usamos severidad general porque mezclaría estructuras con muy distinta
+  // completitud (hojas adultas 99% vs frutos 2%).
   const top = rows
-    .map((r) => ({ r, sev: severityPct(r) }))
+    .map((r) => ({ r, sev: sevIndividual(r) }))
+    .filter((x) => x.sev !== null)
     .sort((a, b) => b.sev - a.sev)
     .slice(0, 5);
 
   const topBody = document.querySelector("#topTbl tbody");
   topBody.innerHTML = "";
   for (const { r, sev } of top) {
+    const nivel = nivelSeveridad(sev);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r.fecha}</td>
       <td>${r.fincas?.nombre  ?? ""}</td>
       <td>${r.bloques?.nombre ?? ""}</td>
-      <td>${sev.toFixed(1)}</td>
-      <td>${Number(r.lat).toFixed(5)}</td>
-      <td>${Number(r.lon).toFixed(5)}</td>
+      <td><strong>${sev.toFixed(1)}%</strong></td>
+      <td>${nivel}</td>
+      <td>${r.hojas_adultas ?? "—"}/12 hojas afectadas</td>
     `;
     topBody.appendChild(tr);
   }
 
-  // ── Resumen por finca/bloque ───────────────────────────
-  // Proporción agrupada: Σ unidades afectadas / (n × 48) × 100
-  // Evita distorsión por número desigual de muestras por fecha.
-  const agg = new Map();
-  for (const r of rows) {
-    const finca  = r.fincas?.nombre  ?? String(r.finca_id  ?? "");
-    const bloque = r.bloques?.nombre ?? (r.bloque_id ? String(r.bloque_id) : "");
-    const key    = `${finca}||${bloque}`;
-    const unid   = (r.brotes_hojas||0) + (r.hojas_adultas||0) + (r.brotes_limones||0) + (r.botones_florales||0);
-    if (!agg.has(key)) agg.set(key, { finca, bloque, finca_id: r.finca_id, bloque_id: r.bloque_id, n: 0, sum_unid: 0 });
-    const a = agg.get(key);
-    a.n        += 1;
-    a.sum_unid += unid;
-  }
-  const summary = Array.from(agg.values())
-    .map((a) => ({ ...a, avg: a.n ? (a.sum_unid / (a.n * 48)) * 100 : 0 }))
-    .sort((a, b) => b.avg - a.avg);
-
+  // ── Resumen por finca/bloque ───────────────────────────────────────────────
   const sumBody = document.querySelector("#sumTbl tbody");
   sumBody.innerHTML = "";
   for (const a of summary) {
@@ -173,123 +329,231 @@ async function refresh() {
     tr.innerHTML = `
       <td>${a.finca}</td>
       <td>${a.bloque || "—"}</td>
-      <td>${a.n}</td>
-      <td>${a.avg.toFixed(1)}</td>
+      <td>${a.nHA}</td>
+      <td><strong>${a.sevHA !== null ? a.sevHA.toFixed(1) + "%" : "Sin datos"}</strong></td>
+      <td>${a.sevBH  !== null ? a.sevBH.toFixed(1)  + "%" : "—"}</td>
+      <td>${a.sevFR  !== null ? a.sevFR.toFixed(1)  + "%" : "—"}</td>
+      <td>${a.sevBF  !== null ? a.sevBF.toFixed(1)  + "%" : "—"}</td>
+      <td>${a.pctInterv.toFixed(0)}%</td>
+      <td>${a.nivel}</td>
     `;
     sumBody.appendChild(tr);
   }
 
-  // ── Priorización ──────────────────────────────────────
+  // ── Priorización ──────────────────────────────────────────────────────────
   renderPriorizacion(summary);
 
-  // ── Tendencia diaria ──────────────────────────────────
-  // Proporción agrupada por día: Σ unidades afectadas / (n × 48) × 100
-  const byDay = new Map();
+  // ── Tendencia semanal ─────────────────────────────────────────────────────
+  // Agrupamos por semana (lunes), no por día, para reflejar el diseño
+  // muestral real: muestreo rotativo semanal por bloque.
+  const byWeek = new Map();
   for (const r of rows) {
-    const d    = r.fecha;
-    const unid = (r.brotes_hojas||0) + (r.hojas_adultas||0) + (r.brotes_limones||0) + (r.botones_florales||0);
-    if (!byDay.has(d)) byDay.set(d, { n: 0, sum_unid: 0 });
-    const a = byDay.get(d);
-    a.n        += 1;
-    a.sum_unid += unid;
+    const d = new Date(r.fecha);
+    // Lunes de la semana
+    const lunes = new Date(d);
+    lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = lunes.toISOString().slice(0, 10);
+
+    if (!byWeek.has(key)) byWeek.set(key, []);
+    byWeek.get(key).push(r);
   }
-  const days = Array.from(byDay.entries())
-    .map(([d, a]) => ({ d, avg: a.n ? (a.sum_unid / (a.n * 48)) * 100 : 0, n: a.n }))
-    .sort((x, y) => x.d.localeCompare(y.d));
 
-  renderTrend(days);
+  const weeks = Array.from(byWeek.entries())
+    .map(([semana, rws]) => ({
+      semana,
+      sevHA: sevPoblacional(rws, "hojas_adultas"),
+      pctInt: pctSobreUmbral(rws, U_INT),
+      pctCrit: pctSobreUmbral(rws, U_CRIT),
+      n: rws.length,
+    }))
+    .filter(w => w.sevHA !== null)
+    .sort((x, y) => x.semana.localeCompare(y.semana));
 
-  // ── Severidad por finca (desglose órganos) ────────────
+  renderTrend(weeks);
+
+  // ── Severidad por finca (desglose órganos) ────────────────────────────────
   renderFincaSeverity(rows);
 
-  // ── NUEVO: Gráfico dual severidad vs. aplicaciones ────
-  renderControlComparison(days, aplicaciones);
+  // ── Gráfico dual severidad vs. aplicaciones ───────────────────────────────
+  renderControlComparison(weeks, aplicaciones);
 
-  // ── NUEVO: Bloques críticos ───────────────────────────
+  // ── Bloques críticos ──────────────────────────────────────────────────────
   renderCriticalBlocks(summary, ultimasAplicaciones);
 
   setStatus("");
 }
 
-// ── Priorización ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PRIORIZACIÓN
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderPriorizacion(summary) {
   const tbody = document.querySelector("#prioTbl tbody");
   tbody.innerHTML = "";
   for (let i = 0; i < summary.length; i++) {
-    const s  = summary[i];
+    const s = summary[i];
+    if (s.sevHA === null) continue;
+
+    // Acción basada en umbrales definidos para este monitoreo
     let accion = "Monitoreo preventivo";
-    if      (s.avg >= 66) accion = "Aplicación urgente";
-    else if (s.avg >= 33) accion = "Aplicación recomendada";
+    if      (s.sevHA >= U_CRIT) accion = "⚠ Aplicación URGENTE";
+    else if (s.sevHA >= U_INT)  accion = "Aplicar esta semana";
+    else if (s.sevHA >= U_ALERT) accion = "Vigilar — reevaluar en 7 días";
+
+    // Criterio poblacional: % plantas sobre umbral de intervención
+    const criterioPobl = s.pctInterv >= 30
+      ? `(${s.pctInterv.toFixed(0)}% plantas ≥${U_INT}%)`
+      : "";
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${i + 1}</td>
       <td>${s.finca}</td>
       <td>${s.bloque || "—"}</td>
-      <td style="font-weight:600">${s.avg.toFixed(1)}%</td>
-      <td>${s.n}</td>
-      <td>${accion}</td>
+      <td style="font-weight:600">${s.sevHA.toFixed(1)}%</td>
+      <td>${s.nHA}</td>
+      <td>${s.pctInterv.toFixed(0)}%</td>
+      <td>${accion} ${criterioPobl}</td>
     `;
     tbody.appendChild(tr);
   }
 }
 
-// ── Tendencia diaria ──────────────────────────────────
-function renderTrend(days) {
+// ─────────────────────────────────────────────────────────────────────────────
+// TENDENCIA SEMANAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderTrend(weeks) {
   const ctx    = document.getElementById("trendChart");
-  const labels = days.map((x) => x.d);
-  const data   = days.map((x) => Number(x.avg.toFixed(2)));
+  const labels = weeks.map((w) => w.semana);
+  const data   = weeks.map((w) => Number(w.sevHA.toFixed(2)));
+
+  // Líneas de referencia para los umbrales
+  const lineAlerta = Array(labels.length).fill(U_ALERT);
+  const lineInterv = Array(labels.length).fill(U_INT);
+  const lineCrit   = Array(labels.length).fill(U_CRIT);
 
   if (trendChart) trendChart.destroy();
   trendChart = new Chart(ctx, {
     type: "line",
     data: {
       labels,
-      datasets: [{
-        label:           "Severidad promedio (%)",
-        data,
-        tension:         0.25,
-        borderWidth:     2,
-        pointRadius:     3,
-        borderColor:     "#2b66ff",
-        backgroundColor: "rgba(43,102,255,0.1)",
-      }],
+      datasets: [
+        {
+          label:           "Severidad pob. hojas adultas (%)",
+          data,
+          tension:         0.25,
+          borderWidth:     2.5,
+          pointRadius:     4,
+          borderColor:     "#E24B4A",
+          backgroundColor: "rgba(226,75,74,0.1)",
+          fill:            true,
+          order:           1,
+        },
+        {
+          label:       `Umbral alerta (${U_ALERT}%)`,
+          data:        lineAlerta,
+          borderColor: "#EF9F27",
+          borderDash:  [5, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill:        false,
+          order:       2,
+        },
+        {
+          label:       `Umbral intervención (${U_INT}%)`,
+          data:        lineInterv,
+          borderColor: "#E24B4A",
+          borderDash:  [5, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill:        false,
+          order:       3,
+        },
+        {
+          label:       `Umbral crítico (${U_CRIT}%)`,
+          data:        lineCrit,
+          borderColor: "#7B0000",
+          borderDash:  [4, 2],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill:        false,
+          order:       4,
+        },
+      ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
-      scales:  { y: { beginAtZero: true, suggestedMax: 100 } },
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.datasetIndex === 0)
+                return ` Severidad: ${ctx.parsed.y.toFixed(1)}%  (${weeks[ctx.dataIndex]?.n ?? ""} registros)`;
+              return ` ${ctx.dataset.label}`;
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: 100,
+          title: { display: true, text: "Severidad hojas adultas (%)" },
+        },
+        x: { title: { display: true, text: "Semana (lunes)" } },
+      },
     },
   });
 }
 
-// ── Severidad por finca (desglose órganos) ────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SEVERIDAD POR FINCA — DESGLOSE POR ESTRUCTURA
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderFincaSeverity(rows) {
   const byFinca = new Map();
   for (const r of rows) {
     const finca = r.fincas?.nombre ?? String(r.finca_id ?? "");
-    if (!byFinca.has(finca))
-      byFinca.set(finca, { brotes_hojas: [], hojas_adultas: [], brotes_limones: [], botones_florales: [], general: [] });
-
-    const f     = byFinca.get(finca);
-    const total = (r.brotes_hojas || 0) + (r.hojas_adultas || 0) + (r.brotes_limones || 0)
-                + (r.botones_florales || 0);
-    f.brotes_hojas.push(   (r.brotes_hojas    / 12) * 100);
-    f.hojas_adultas.push(  (r.hojas_adultas   / 12) * 100);
-    f.brotes_limones.push( (r.brotes_limones  / 12) * 100);
-    f.botones_florales.push((r.botones_florales/ 12) * 100);
-    f.general.push(        (total             / 48) * 100);
+    if (!byFinca.has(finca)) byFinca.set(finca, []);
+    byFinca.get(finca).push(r);
   }
 
   const fincaNames = Array.from(byFinca.keys()).sort();
-  const avg        = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  // Proporción agrupada por estructura y finca
+  // Solo se calcula cuando hay ≥3 registros con dato para esa estructura
+  // (evita distorsión por muestras muy pequeñas)
+  const MIN_N = 3;
+  const sevPobFinca = (nombre, campo) => {
+    const filaRows = byFinca.get(nombre) ?? [];
+    const conDato  = filaRows.filter(r => r[campo] !== null && r[campo] !== undefined);
+    if (conDato.length < MIN_N) return null;
+    return sevPoblacional(conDato, campo);
+  };
 
   const datasets = [
-    { label: "Brotes hojas",      data: fincaNames.map((f) => avg(byFinca.get(f).brotes_hojas).toFixed(1)),    backgroundColor: "#ff6384" },
-    { label: "Hojas adultas",     data: fincaNames.map((f) => avg(byFinca.get(f).hojas_adultas).toFixed(1)),   backgroundColor: "#36a2eb" },
-    { label: "Brotes limones",    data: fincaNames.map((f) => avg(byFinca.get(f).brotes_limones).toFixed(1)),  backgroundColor: "#ffce56" },
-    { label: "Botones florales",  data: fincaNames.map((f) => avg(byFinca.get(f).botones_florales).toFixed(1)),backgroundColor: "#4bc0c0" },
-    { label: "Severidad General", data: fincaNames.map((f) => avg(byFinca.get(f).general).toFixed(1)), backgroundColor: "#ff9f40" },
+    {
+      label:           "Hojas adultas (principal)",
+      data:            fincaNames.map(f => sevPobFinca(f, "hojas_adultas")?.toFixed(1) ?? null),
+      backgroundColor: "#E24B4A",
+    },
+    {
+      label:           "Brotes hojas",
+      data:            fincaNames.map(f => sevPobFinca(f, "brotes_hojas")?.toFixed(1) ?? null),
+      backgroundColor: "#EF9F27",
+    },
+    {
+      label:           "Frutos",
+      data:            fincaNames.map(f => sevPobFinca(f, "brotes_limones")?.toFixed(1) ?? null),
+      backgroundColor: "#378ADD",
+    },
+    {
+      label:           "Botones florales",
+      data:            fincaNames.map(f => sevPobFinca(f, "botones_florales")?.toFixed(1) ?? null),
+      backgroundColor: "#1D9E75",
+    },
   ];
 
   const ctx = document.getElementById("fincaChart");
@@ -299,34 +563,57 @@ function renderFincaSeverity(rows) {
     data: { labels: fincaNames, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const val = ctx.parsed.y;
+              return val !== null
+                ? ` ${ctx.dataset.label}: ${Number(val).toFixed(1)}%`
+                : ` ${ctx.dataset.label}: Sin datos suficientes`;
+            },
+          },
+        },
+      },
       scales: {
-        y: { beginAtZero: true, suggestedMax: 100, title: { display: true, text: "Severidad (%)" } },
+        y: {
+          beginAtZero: true,
+          suggestedMax: 100,
+          title: { display: true, text: "Severidad poblacional (%)" },
+        },
         x: { title: { display: true, text: "Finca" } },
       },
     },
   });
 }
 
-// ── NUEVO: Gráfico dual – Severidad diaria vs. Aplicaciones ──
-function renderControlComparison(days, aplicaciones) {
+// ─────────────────────────────────────────────────────────────────────────────
+// GRÁFICO DUAL: SEVERIDAD SEMANAL vs. APLICACIONES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderControlComparison(weeks, aplicaciones) {
   const ctx = document.getElementById("controlChart");
   if (controlChart) controlChart.destroy();
 
-  if (!days.length) {
+  if (!weeks.length) {
     ctx.parentElement.querySelector("p.hint").textContent = "Sin datos para el período seleccionado.";
     return;
   }
 
-  const labels   = days.map((x) => x.d);
-  const sevData  = days.map((x) => Number(x.avg.toFixed(2)));
+  const labels  = weeks.map((w) => w.semana);
+  const sevData = weeks.map((w) => Number(w.sevHA.toFixed(2)));
 
-  // Barras de aplicaciones: valor = número de aplicaciones ese día
-  const aplByDay = {};
+  // Aplicaciones por semana (fecha de aplicación → lunes de esa semana)
+  const aplByWeek = {};
   for (const a of aplicaciones) {
-    aplByDay[a.fecha_aplicacion] = (aplByDay[a.fecha_aplicacion] || 0) + 1;
+    const d = new Date(a.fecha_aplicacion);
+    const lunes = new Date(d);
+    lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = lunes.toISOString().slice(0, 10);
+    aplByWeek[key] = (aplByWeek[key] || 0) + 1;
   }
-  const aplData = labels.map((d) => aplByDay[d] ?? 0);
+  const aplData = labels.map((w) => aplByWeek[w] ?? 0);
   const maxApl  = Math.max(...aplData, 1);
 
   controlChart = new Chart(ctx, {
@@ -335,14 +622,14 @@ function renderControlComparison(days, aplicaciones) {
       datasets: [
         {
           type:            "line",
-          label:           "Severidad promedio (%)",
+          label:           "Severidad pob. hojas adultas (%)",
           data:            sevData,
           yAxisID:         "ySev",
           tension:         0.25,
           borderWidth:     2.5,
           pointRadius:     3,
-          borderColor:     "#ff4d6d",
-          backgroundColor: "rgba(255,77,109,0.08)",
+          borderColor:     "#E24B4A",
+          backgroundColor: "rgba(226,75,74,0.08)",
           order:           1,
         },
         {
@@ -367,7 +654,7 @@ function renderControlComparison(days, aplicaciones) {
             label: (ctx) => {
               if (ctx.dataset.yAxisID === "yApl")
                 return ` ${ctx.parsed.y} aplicación(es) de control`;
-              return ` Severidad: ${ctx.parsed.y.toFixed(1)}%`;
+              return ` Severidad hojas adultas: ${ctx.parsed.y.toFixed(1)}%`;
             },
           },
         },
@@ -378,8 +665,8 @@ function renderControlComparison(days, aplicaciones) {
           position: "left",
           min:      0,
           max:      100,
-          title:    { display: true, text: "Severidad (%)", color: "#ff4d6d" },
-          grid:     { color: "rgba(255,77,109,0.1)" },
+          title:    { display: true, text: "Severidad hojas adultas (%)", color: "#E24B4A" },
+          grid:     { color: "rgba(226,75,74,0.1)" },
         },
         yApl: {
           type:     "linear",
@@ -395,24 +682,36 @@ function renderControlComparison(days, aplicaciones) {
   });
 }
 
-// ── NUEVO: Panel de bloques críticos ──────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOQUES CRÍTICOS
+// Criterio combinado — un bloque es crítico si cumple al menos UNO:
+//   1. Severidad poblacional ≥ 42% Y sin control en >21 días
+//   2. ≥ 30% de plantas con severidad ≥ 42% en el período
+//   3. ≥ 15% de plantas en nivel crítico (≥ 67%)
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderCriticalBlocks(summary, ultimasAplicaciones) {
   const tbody = document.querySelector("#criticalTbl tbody");
   tbody.innerHTML = "";
 
-  // Filtrar: severidad ≥ 33% Y sin aplicación reciente (>21d o nunca)
   const criticos = summary.filter((s) => {
-    if (s.avg < 33) return false;
+    if (s.sevHA === null) return false;
     const key = s.bloque_id ?? `finca_${s.finca_id}`;
     const ult  = ultimasAplicaciones[key];
-    return !ult || ult.dias > DIAS_ALERTA;
+    const sinControlReciente = !ult || ult.dias > DIAS_ALERTA;
+
+    return (
+      (s.sevHA >= U_INT  && sinControlReciente) ||  // criterio 1
+      (s.pctInterv >= 30)                       ||  // criterio 2
+      (s.pctCritico >= 15)                          // criterio 3
+    );
   });
 
-  // Actualizar KPI
   document.getElementById("kpiAlert").textContent = criticos.length;
 
   if (!criticos.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#06d6a0;font-weight:600">✅ Sin bloques críticos en el período</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#06d6a0;font-weight:600">
+      ✅ Sin bloques críticos en el período</td></tr>`;
     return;
   }
 
@@ -423,107 +722,131 @@ function renderCriticalBlocks(summary, ultimasAplicaciones) {
     const ultimaFecha = ult ? ult.fecha  : "Sin registro";
     const diasStr     = ult ? `${ult.dias}d` : "—";
 
-    let accion     = "Aplicación recomendada";
-    let accionStyle = "color:#ffd166";
-    if (s.avg >= 66) { accion = "⚠ Aplicación URGENTE"; accionStyle = "color:#ff4d6d;font-weight:700"; }
+    // Motivo del flag
+    const motivos = [];
+    if (s.sevHA >= U_INT && (!ult || ult.dias > DIAS_ALERTA))
+      motivos.push(`Sev≥${U_INT}% + sin ctrl >${DIAS_ALERTA}d`);
+    if (s.pctInterv >= 30)
+      motivos.push(`${s.pctInterv.toFixed(0)}% plantas ≥${U_INT}%`);
+    if (s.pctCritico >= 15)
+      motivos.push(`${s.pctCritico.toFixed(0)}% plantas ≥${U_CRIT}%`);
+
+    let accion      = "Aplicación recomendada";
+    let accionStyle = "color:#EF9F27";
+    if (s.sevHA >= U_CRIT || s.pctCritico >= 30) {
+      accion      = "⚠ Aplicación URGENTE";
+      accionStyle = "color:#E24B4A;font-weight:700";
+    }
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${s.finca}</td>
       <td>${s.bloque || "—"}</td>
-      <td style="font-weight:600;color:${s.avg >= 66 ? "#ff4d6d" : "#ffd166"}">${s.avg.toFixed(1)}%</td>
-      <td>${s.n}</td>
+      <td style="font-weight:600;color:${s.sevHA >= U_CRIT ? "#E24B4A" : s.sevHA >= U_INT ? "#EF9F27" : "inherit"}">
+        ${s.sevHA.toFixed(1)}%</td>
+      <td>${s.nHA}</td>
       <td>${ultimaFecha}</td>
       <td style="font-weight:600">${diasStr}</td>
+      <td style="font-size:0.85em;color:#aaa">${motivos.join(" · ")}</td>
       <td style="${accionStyle}">${accion}</td>
     `;
     tbody.appendChild(tr);
   }
 }
 
-// ── Exportar PDF ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPORTAR PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function exportPDF() {
   setStatus("Generando PDF…");
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF("p", "mm", "a4");
 
   doc.setFontSize(18); doc.setFont(undefined, "bold");
-  doc.text("Informe de Monitoreo de Ácaros", 105, 20, { align: "center" });
+  doc.text("Informe de Monitoreo de Ácaros — Limones", 105, 20, { align: "center" });
 
-  doc.setFontSize(12); doc.setFont(undefined, "normal");
+  doc.setFontSize(11); doc.setFont(undefined, "normal");
   doc.text(`Período: ${lastFilters.dateFrom || "N/A"} al ${lastFilters.dateTo || "N/A"}`, 105, 28, { align: "center" });
+  doc.text(`Metodología: Binomial presencia/ausencia · 4 puntos cardinales × 3 hojas = 12 unidades/estructura`, 105, 34, { align: "center" });
 
-  let yPos = 35;
+  let yPos = 42;
 
   // 1) Tendencia
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
-  doc.text("1. Severidad promedio por fecha", 14, yPos); yPos += 8;
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
+  doc.text("1. Tendencia semanal de severidad — Hojas adultas", 14, yPos); yPos += 7;
   if (trendChart) {
     doc.addImage(document.getElementById("trendChart").toDataURL("image/png"), "PNG", 14, yPos, 180, 60);
-    yPos += 65;
+    yPos += 64;
   }
 
   // 2) Severidad por finca
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
-  doc.text("2. Severidad promedio por finca (desglose por órgano)", 14, yPos); yPos += 8;
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
+  doc.text("2. Severidad por finca — desglose por estructura evaluada", 14, yPos); yPos += 7;
   if (fincaChart) {
     doc.addImage(document.getElementById("fincaChart").toDataURL("image/png"), "PNG", 14, yPos, 180, 60);
-    yPos += 65;
+    yPos += 64;
   }
 
   // 3) Severidad vs. Aplicaciones
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
-  doc.text("3. Severidad vs. Aplicaciones de control", 14, yPos); yPos += 8;
+  if (yPos > 200) { doc.addPage(); yPos = 20; }
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
+  doc.text("3. Severidad semanal vs. Aplicaciones de control", 14, yPos); yPos += 7;
   if (controlChart) {
     doc.addImage(document.getElementById("controlChart").toDataURL("image/png"), "PNG", 14, yPos, 180, 60);
-    yPos += 65;
+    yPos += 64;
   }
 
   // 4) Bloques críticos
-  if (yPos > 220) { doc.addPage(); yPos = 20; }
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
-  doc.text("4. Bloques críticos (alta severidad + sin control reciente)", 14, yPos); yPos += 5;
+  if (yPos > 210) { doc.addPage(); yPos = 20; }
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
+  doc.text("4. Bloques críticos (sev ≥42% + sin control reciente, o ≥30% plantas sobre umbral)", 14, yPos); yPos += 5;
   const critRows = Array.from(document.querySelectorAll("#criticalTbl tbody tr")).map((tr) =>
     Array.from(tr.querySelectorAll("td")).map((c) => c.textContent.trim())
   );
   doc.autoTable({
     startY:     yPos,
-    head:       [["Finca", "Bloque", "Sev% prom.", "Registros", "Última aplic.", "Días sin ctrl.", "Acción"]],
+    head:       [["Finca", "Bloque", "Sev%", "N", "Última apl.", "Días s/ctrl", "Motivo", "Acción"]],
     body:       critRows,
     theme:      "grid",
-    headStyles: { fillColor: [220, 53, 69] },
-    styles:     { fontSize: 9 },
+    headStyles: { fillColor: [226, 75, 74] },
+    styles:     { fontSize: 8 },
   });
   yPos = doc.lastAutoTable.finalY + 10;
 
   // 5) Priorización
   if (yPos > 220) { doc.addPage(); yPos = 20; }
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
-  doc.text("5. Priorización de campos a aplicar", 14, yPos); yPos += 5;
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
+  doc.text("5. Priorización de campos a intervenir", 14, yPos); yPos += 5;
   const prioRows = Array.from(document.querySelectorAll("#prioTbl tbody tr")).map((tr) =>
     Array.from(tr.querySelectorAll("td")).map((c) => c.textContent.trim())
   );
   doc.autoTable({
     startY:     yPos,
-    head:       [["Prioridad", "Finca", "Bloque", "Sev% Prom", "Registros", "Acción"]],
+    head:       [["#", "Finca", "Bloque", "Sev% HA", "N muestras", "% plantas ≥42%", "Acción"]],
     body:       prioRows,
     theme:      "grid",
     headStyles: { fillColor: [43, 102, 255] },
-    styles:     { fontSize: 9 },
+    styles:     { fontSize: 8 },
   });
   yPos = doc.lastAutoTable.finalY + 10;
 
   // 6) Recomendación general
   if (yPos > 240) { doc.addPage(); yPos = 20; }
-  doc.setFontSize(14); doc.setFont(undefined, "bold");
+  doc.setFontSize(13); doc.setFont(undefined, "bold");
   doc.text("6. Recomendación general", 14, yPos); yPos += 8;
-  doc.setFontSize(11); doc.setFont(undefined, "normal");
+  doc.setFontSize(10); doc.setFont(undefined, "normal");
   const recom = `Basado en los datos del período ${lastFilters.dateFrom || "N/A"} al ${lastFilters.dateTo || "N/A"}:
-• Campos con severidad ≥66%: Aplicación URGENTE de control biológico o químico.
-• Campos con severidad 33–66%: Aplicación RECOMENDADA en los próximos 7 días.
-• Campos con severidad <33%: Monitoreo preventivo continuo cada 14 días.
-• Bloques sin aplicación >21 días y severidad ≥33%: priorizar de inmediato.
-Se recomienda rotar productos y evaluar el uso de biocontroladores (Isaria javanica).`.trim();
+
+• Bloques con severidad ≥67% (crítico): Aplicación de acaricida URGENTE e inmediata.
+• Bloques con severidad 42–67% (intervención): Programar aplicación dentro de los próximos 7 días.
+• Bloques con ≥30% de plantas sobre umbral de intervención: Aplicar aunque el promedio sea menor.
+• Bloques con severidad 25–42% (alerta): Aumentar frecuencia de muestreo a cada 7 días.
+• Bloques con severidad <25% (monitoreo): Continuar muestreo rutinario semanal.
+• Bloques sin aplicación >21 días y severidad ≥42%: Priorizar de inmediato.
+
+Nota metodológica: La incidencia (% árboles afectados) es históricamente ~99% en todas las fincas
+y no discrimina entre niveles de presión. El indicador de gestión es la severidad de hojas adultas.`.trim();
   doc.text(doc.splitTextToSize(recom, 180), 14, yPos);
 
   // Footer
