@@ -46,21 +46,48 @@
             <option value="">Todos</option>
           </select>
         </label>
+
+        <!-- CAMBIO 1: técnico como select.
+             Texto libre generó "AddylJiménez" y "Addyl Jiménez" como entradas distintas.
+             Se puebla desde fetchTecnicos() igual que en monitoreo y control. -->
         <label>
-          Técnico (opcional)
-          <input id="tecnicoInput" type="text" placeholder="Nombre" />
+          Técnico
+          <select id="tecnicoSelect">
+            <option value="">Todos</option>
+          </select>
         </label>
+
         <button id="btnRefresh" class="btn">Actualizar</button>
       </div>
     </section>
 
     <section class="grid2">
+
+      <!-- CAMBIO 3: mapa coroplético por finca.
+           El mapa anterior era un heatmap de puntos (lat/lon por registro).
+           Las coordenadas fueron removidas del sistema de monitoreo.
+           El mapa ahora colorea cada finca según su severidad poblacional
+           usando los polígonos GeoJSON almacenados en Admin → GeoJSON por finca.
+           dashboard.js debe: 1) cargar GeoJSON de cada finca, 2) calcular
+           severidad poblacional por finca para el período, 3) pintar cada
+           polígono con el color del umbral correspondiente.
+           Si una finca no tiene GeoJSON registrado, no se dibuja su polígono. -->
       <section class="panel">
-        <h2>Mapa</h2>
+        <h2>Mapa por finca</h2>
         <div id="map" class="map"></div>
         <div class="hint">
-          Severidad = ((brotes+hojas+limones+botones+yemas)/60)×100 &nbsp;|&nbsp;
-          <span style="color:#ff0000;font-weight:600">Borde rojo</span> = alta severidad + &gt;21 días sin control
+          Cada finca se colorea según su severidad poblacional de hojas adultas en el período seleccionado.
+          &nbsp;|&nbsp;
+          <span style="color:#2d6a4f;font-weight:600">■</span> Monitoreo &lt;25%
+          &nbsp;
+          <span style="color:#b45309;font-weight:600">■</span> Alerta 25–42%
+          &nbsp;
+          <span style="color:#c2410c;font-weight:600">■</span> Intervención 42–67%
+          &nbsp;
+          <span style="color:#991b1b;font-weight:600">■</span> Crítico &gt;67%
+          &nbsp;|&nbsp;
+          Borde pulsante = bloque crítico sin control en más de 21 días.
+          Los polígonos se configuran en Admin → GeoJSON por finca.
         </div>
       </section>
 
@@ -74,10 +101,15 @@
                 <th>Finca</th>
                 <th>Bloque</th>
                 <th>Técnico</th>
-                <th>Sev%</th>
+                <!-- CAMBIO 4: Sev% ahora es severidad de hojas adultas (estructura
+                     principal, 99% completitud). La fórmula anterior usaba
+                     (brotes+hojas+limones+botones+yemas)/60 — denominador incorrecto
+                     y mezcla estructuras con muy distinta completitud.
+                     Fórmula correcta: hojas_adultas/12 × 100. -->
+                <th>Sev% HA</th>
+                <th>Nivel</th>
                 <th>Días sin ctrl</th>
-                <th>Lat</th>
-                <th>Lon</th>
+                <!-- CAMBIO 2: Lat y Lon eliminados — coordenadas removidas del sistema -->
               </tr>
             </thead>
             <tbody></tbody>
@@ -90,11 +122,13 @@
         </div>
         <div id="status" class="status"></div>
       </section>
+
     </section>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <!-- leaflet.heat eliminado — el mapa ya no usa heatmap de puntos por coordenada.
+       El coroplético se dibuja con L.geoJSON() nativo de Leaflet. -->
   <script type="module" src="assets/js/dashboard.js"></script>
 </body>
 </html>
