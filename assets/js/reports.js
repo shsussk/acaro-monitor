@@ -344,30 +344,34 @@ async function refresh() {
   renderPriorizacion(summary);
 
   // ── Tendencia semanal ─────────────────────────────────────────────────────
-  // Agrupamos por semana (lunes), no por día, para reflejar el diseño
-  // muestral real: muestreo rotativo semanal por bloque.
+  // Agrupamos por semana (lunes) para reflejar el diseño muestral rotativo.
+  // Mantenemos la misma estructura {d, avg, n} que espera renderTrend.
   const byWeek = new Map();
   for (const r of rows) {
-    const d = new Date(r.fecha);
-    // Lunes de la semana
-    const lunes = new Date(d);
-    lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const key = lunes.toISOString().slice(0, 10);
+    // Parseo sin zona horaria para evitar desfases
+    const [yr, mo, dy] = r.fecha.split("-").map(Number);
+    const fecha  = new Date(yr, mo - 1, dy);
+    const lunes  = new Date(yr, mo - 1, dy - ((fecha.getDay() + 6) % 7));
+    const key    = `${lunes.getFullYear()}-${String(lunes.getMonth()+1).padStart(2,"0")}-${String(lunes.getDate()).padStart(2,"0")}`;
 
     if (!byWeek.has(key)) byWeek.set(key, []);
     byWeek.get(key).push(r);
   }
 
+  // avg = severidad poblacional de hojas_adultas (estructura principal)
   const weeks = Array.from(byWeek.entries())
-    .map(([semana, rws]) => ({
-      semana,
-      sevHA: sevPoblacional(rws, "hojas_adultas"),
-      pctInt: pctSobreUmbral(rws, U_INT),
-      pctCrit: pctSobreUmbral(rws, U_CRIT),
-      n: rws.length,
-    }))
-    .filter(w => w.sevHA !== null)
-    .sort((x, y) => x.semana.localeCompare(y.semana));
+    .map(([semana, rws]) => {
+      const sev = sevPoblacional(rws, "hojas_adultas");
+      return {
+        d:    semana,
+        avg:  sev ?? 0,
+        n:    rws.filter(r => r.hojas_adultas !== null && r.hojas_adultas !== undefined).length,
+        pctInt:  pctSobreUmbral(rws, U_INT),
+        pctCrit: pctSobreUmbral(rws, U_CRIT),
+      };
+    })
+    .filter(w => w.n > 0)
+    .sort((x, y) => x.d.localeCompare(y.d));
 
   renderTrend(weeks);
 
@@ -375,6 +379,7 @@ async function refresh() {
   renderFincaSeverity(rows);
 
   // ── Gráfico dual severidad vs. aplicaciones ───────────────────────────────
+  // Pasa weeks con la misma estructura {d, avg} que espera renderControlComparison
   renderControlComparison(weeks, aplicaciones);
 
   // ── Bloques críticos ──────────────────────────────────────────────────────
@@ -425,8 +430,8 @@ function renderPriorizacion(summary) {
 
 function renderTrend(weeks) {
   const ctx    = document.getElementById("trendChart");
-  const labels = weeks.map((w) => w.semana);
-  const data   = weeks.map((w) => Number(w.sevHA.toFixed(2)));
+  const labels = weeks.map((w) => w.d);
+  const data   = weeks.map((w) => Number(w.avg.toFixed(2)));
 
   // Líneas de referencia para los umbrales
   const lineAlerta = Array(labels.length).fill(U_ALERT);
@@ -502,7 +507,7 @@ function renderTrend(weeks) {
           suggestedMax: 100,
           title: { display: true, text: "Severidad hojas adultas (%)" },
         },
-        x: { title: { display: true, text: "Semana (lunes)" } },
+        x: { title: { display: true, text: "Semana" } },
       },
     },
   });
@@ -522,36 +527,37 @@ function renderFincaSeverity(rows) {
 
   const fincaNames = Array.from(byFinca.keys()).sort();
 
-  // Proporción agrupada por estructura y finca
-  // Solo se calcula cuando hay ≥3 registros con dato para esa estructura
-  // (evita distorsión por muestras muy pequeñas)
+  // Proporción agrupada por estructura y finca.
+  // Retorna null si la estructura no tiene datos suficientes (< 3 registros).
+  // Retorna número, no string — Chart.js necesita números.
   const MIN_N = 3;
   const sevPobFinca = (nombre, campo) => {
     const filaRows = byFinca.get(nombre) ?? [];
     const conDato  = filaRows.filter(r => r[campo] !== null && r[campo] !== undefined);
     if (conDato.length < MIN_N) return null;
-    return sevPoblacional(conDato, campo);
+    const sev = sevPoblacional(conDato, campo);
+    return sev !== null ? parseFloat(sev.toFixed(1)) : null;
   };
 
   const datasets = [
     {
       label:           "Hojas adultas (principal)",
-      data:            fincaNames.map(f => sevPobFinca(f, "hojas_adultas")?.toFixed(1) ?? null),
+      data:            fincaNames.map(f => sevPobFinca(f, "hojas_adultas")),
       backgroundColor: "#E24B4A",
     },
     {
       label:           "Brotes hojas",
-      data:            fincaNames.map(f => sevPobFinca(f, "brotes_hojas")?.toFixed(1) ?? null),
+      data:            fincaNames.map(f => sevPobFinca(f, "brotes_hojas")),
       backgroundColor: "#EF9F27",
     },
     {
       label:           "Frutos",
-      data:            fincaNames.map(f => sevPobFinca(f, "brotes_limones")?.toFixed(1) ?? null),
+      data:            fincaNames.map(f => sevPobFinca(f, "brotes_limones")),
       backgroundColor: "#378ADD",
     },
     {
       label:           "Botones florales",
-      data:            fincaNames.map(f => sevPobFinca(f, "botones_florales")?.toFixed(1) ?? null),
+      data:            fincaNames.map(f => sevPobFinca(f, "botones_florales")),
       backgroundColor: "#1D9E75",
     },
   ];
@@ -567,12 +573,10 @@ function renderFincaSeverity(rows) {
         legend: { display: true },
         tooltip: {
           callbacks: {
-            label: (ctx) => {
-              const val = ctx.parsed.y;
-              return val !== null
-                ? ` ${ctx.dataset.label}: ${Number(val).toFixed(1)}%`
-                : ` ${ctx.dataset.label}: Sin datos suficientes`;
-            },
+            label: (ctx) =>
+              ctx.parsed.y !== null
+                ? ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+                : ` ${ctx.dataset.label}: Sin datos suficientes`,
           },
         },
       },
@@ -601,19 +605,21 @@ function renderControlComparison(weeks, aplicaciones) {
     return;
   }
 
-  const labels  = weeks.map((w) => w.semana);
-  const sevData = weeks.map((w) => Number(w.sevHA.toFixed(2)));
+  // weeks tiene estructura {d, avg, n} — mismo contrato que el original usaba con days
+  const labels  = weeks.map((w) => w.d);
+  const sevData = weeks.map((w) => Number(w.avg.toFixed(2)));
 
-  // Aplicaciones por semana (fecha de aplicación → lunes de esa semana)
+  // Aplicaciones por semana: agrupamos cada aplicación en el lunes de su semana
   const aplByWeek = {};
   for (const a of aplicaciones) {
-    const d = new Date(a.fecha_aplicacion);
-    const lunes = new Date(d);
-    lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const key = lunes.toISOString().slice(0, 10);
+    const [yr, mo, dy] = a.fecha_aplicacion.split("-").map(Number);
+    const fecha = new Date(yr, mo - 1, dy);
+    const offset = (fecha.getDay() + 6) % 7;
+    const lunes  = new Date(yr, mo - 1, dy - offset);
+    const key    = `${lunes.getFullYear()}-${String(lunes.getMonth()+1).padStart(2,"0")}-${String(lunes.getDate()).padStart(2,"0")}`;
     aplByWeek[key] = (aplByWeek[key] || 0) + 1;
   }
-  const aplData = labels.map((w) => aplByWeek[w] ?? 0);
+  const aplData = labels.map((d) => aplByWeek[d] ?? 0);
   const maxApl  = Math.max(...aplData, 1);
 
   controlChart = new Chart(ctx, {
