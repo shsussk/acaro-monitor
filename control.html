@@ -27,49 +27,95 @@
       <p class="hint">Registra las fechas y detalles de cada aplicación de control de ácaros por campo/bloque.</p>
 
       <form id="formControl" class="filters" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));align-items:end;">
+
         <label>Finca *
           <select id="fincaSel" required>
             <option value="">Seleccionar…</option>
           </select>
         </label>
+
         <label>Bloque
           <select id="bloqueSel" disabled>
             <option value="">Todos / N/A</option>
           </select>
         </label>
+
         <label>Fecha aplicación *
           <input id="fechaApl" type="date" required />
         </label>
+
+        <!-- CAMBIO 1: plaga objetivo — evita contaminar el análisis de ácaro
+             con aplicaciones dirigidas a Diaphorina u otras plagas -->
+        <label>Plaga objetivo *
+          <select id="plagaObj" required>
+            <option value="">Seleccionar…</option>
+            <option value="acaro">Ácaro</option>
+            <option value="diaphorina">Diaphorina</option>
+            <option value="minador">Minador de hojas</option>
+            <option value="multiple">Múltiples plagas</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+
         <label>Producto
           <input id="producto" type="text" placeholder="Ej: Abamectina" />
         </label>
+
         <label>Dosis
           <input id="dosis" type="text" placeholder="Ej: 1 L/ha" />
         </label>
+
+        <!-- CAMBIO 2: técnico como select — texto libre causó "AddylJiménez"
+             y "Addyl Jiménez" como entradas distintas en el historial,
+             rompiendo los filtros y el cruce con datos de monitoreo -->
         <label>Técnico
-          <input id="tecnico" type="text" placeholder="Nombre" />
+          <select id="tecnico">
+            <option value="">Seleccionar…</option>
+            <!-- Poblado dinámicamente desde data.js al igual que en monitoreo -->
+          </select>
         </label>
+
         <label style="grid-column:span 2;">Notas
           <input id="notas" type="text" placeholder="Observaciones opcionales" />
         </label>
-        <label>
-          <button type="submit" class="btn" id="btnGuardar">Guardar</button>
-        </label>
+
+        <!-- CAMBIO 3: button fuera del label — <button> dentro de <label>
+             es HTML inválido; label envuelve controles de formulario, no botones -->
+        <button type="submit" class="btn" id="btnGuardar">Guardar</button>
+
       </form>
+
       <div id="status" class="status"></div>
     </section>
 
     <!-- ── Tabla de registros ── -->
     <section class="panel">
       <h2>Historial de aplicaciones</h2>
+
       <div class="filters" style="margin-bottom:12px;">
         <label>Finca
           <select id="filtroFinca"><option value="">Todas</option></select>
+        </label>
+        <!-- CAMBIO 4: filtro de bloque — necesario para cruzar con los datos
+             de severidad por bloque en la página de Informes -->
+        <label>Bloque
+          <select id="filtroBloque" disabled><option value="">Todos</option></select>
+        </label>
+        <label>Plaga
+          <select id="filtroPlaga">
+            <option value="">Todas</option>
+            <option value="acaro">Ácaro</option>
+            <option value="diaphorina">Diaphorina</option>
+            <option value="minador">Minador</option>
+            <option value="multiple">Múltiples</option>
+            <option value="otro">Otro</option>
+          </select>
         </label>
         <label>Desde <input id="filtroDesde" type="date" /></label>
         <label>Hasta  <input id="filtroHasta" type="date" /></label>
         <button id="btnFiltrar" class="btn btnLight">Filtrar</button>
       </div>
+
       <div class="tableWrap">
         <table class="table" id="tblControl">
           <thead>
@@ -77,6 +123,7 @@
               <th>Fecha</th>
               <th>Finca</th>
               <th>Bloque</th>
+              <th>Plaga</th>
               <th>Producto</th>
               <th>Dosis</th>
               <th>Técnico</th>
@@ -90,6 +137,8 @@
     </section>
 
   </main>
+
   <script type="module" src="assets/js/control.js"></script>
 </body>
 </html>
+ 
