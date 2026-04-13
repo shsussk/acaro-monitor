@@ -17,22 +17,25 @@
   <main class="container">
     <section class="panel" style="max-width:720px; margin:76px auto 0;">
       <h1>Acceso de personal</h1>
-      <div class="hint">Inicia sesión para acceder al Dashboard, cargas e informes.</div>
+      <div class="hint">Inicia sesión para acceder al Dashboard, monitoreo, informes y control.</div>
 
-      <div class="filters" style="grid-template-columns: 1fr 1fr 140px;">
+      <!-- CAMBIO 2: <form> en vez de <div>.
+           Sin form: Enter no envía, gestores de contraseñas no detectan el campo,
+           lectores de pantalla no anuncian el formulario correctamente. -->
+      <form id="formLogin" class="filters" style="grid-template-columns: 1fr 1fr 140px;">
         <label>Email
-          <input id="email" type="email" placeholder="tecnico@empresa.com" autocomplete="username" />
+          <input id="email" type="email" placeholder="tecnico@empresa.com"
+                 autocomplete="username" required />
         </label>
-
-        <label>Password
-          <input id="password" type="password" autocomplete="current-password" />
+        <label>Contraseña
+          <input id="password" type="password"
+                 autocomplete="current-password" required />
         </label>
-
-        <button id="btnLogin" class="btn">Entrar</button>
-      </div>
+        <button id="btnLogin" type="submit" class="btn">Entrar</button>
+      </form>
 
       <div class="row" style="margin-top:10px;">
-        <button id="btnLogout" class="btn btnLight">Cerrar sesión</button>
+        <button id="btnLogout" type="button" class="btn btnLight">Cerrar sesión</button>
         <div id="whoami" class="muted"></div>
       </div>
 
@@ -45,22 +48,43 @@
 
     const status = (msg) => document.getElementById("status").textContent = msg || "";
 
-    document.getElementById("btnLogin").addEventListener("click", async () => {
+    // CAMBIO 1: validación del parámetro ?next= para evitar open redirect.
+    // Sin esto: login.html?next=https://sitio-malicioso.com redirige al usuario
+    // a un sitio externo después de autenticarse correctamente.
+    // Solo se permite una ruta relativa que empiece con "/" sin "//" (que
+    // indicaría protocol-relative URL y también redirige fuera del sitio).
+    function safeNext() {
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next") || "";
+      const isRelative = next.startsWith("/") && !next.startsWith("//");
+      return isRelative ? next : "index.html";
+    }
+
+    // CAMBIO 3: si ya hay sesión activa, ir directo al destino.
+    // El usuario no necesita ver el formulario de login si ya está autenticado.
+    async function showUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Sesión válida — redirigir automáticamente
+        window.location.href = safeNext();
+        return;
+      }
+      document.getElementById("whoami").textContent = "No has iniciado sesión";
+    }
+
+    // CAMBIO 2: escuchar submit del form en vez de click del botón.
+    // Esto activa el envío tanto con click como con Enter desde cualquier campo.
+    document.getElementById("formLogin").addEventListener("submit", async (e) => {
+      e.preventDefault();
       try {
         status("Ingresando...");
-        const email = document.getElementById("email").value.trim();
+        const email    = document.getElementById("email").value.trim();
         const password = document.getElementById("password").value;
-
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-
-        // Si login OK, manda al dashboard
-        const params = new URLSearchParams(window.location.search);
-const next = params.get("next") || "index.html";
-window.location.href = next;
-
+        window.location.href = safeNext();
       } catch (e) {
-        status("Error login: " + (e.message || e));
+        status("Error: " + (e.message || e));
       }
     });
 
@@ -69,21 +93,11 @@ window.location.href = next;
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
         status("Sesión cerrada.");
-        await showUser();
+        document.getElementById("whoami").textContent = "No has iniciado sesión";
       } catch (e) {
-        status("Error logout: " + (e.message || e));
+        status("Error al cerrar sesión: " + (e.message || e));
       }
     });
-
-    async function showUser() {
-      // getUser valida el token en el servidor, útil para autorización. [web:81]
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error) {
-        document.getElementById("whoami").textContent = "";
-        return;
-      }
-      document.getElementById("whoami").textContent = user ? `Conectado: ${user.email}` : "No has iniciado sesión";
-    }
 
     await showUser();
   </script>
