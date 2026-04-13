@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ácaros | Admin</title>
-
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
@@ -14,6 +13,7 @@
       <a href="index.html">Dashboard</a>
       <a href="exceles.html">Cargar Excel/CSV</a>
       <a href="informes.html">Informes</a>
+      <a href="control.html">Control</a>
       <a class="active" href="admin.html">Admin</a>
       <a href="login.html" id="btnLogoutLink">Salir</a>
     </nav>
@@ -48,20 +48,20 @@
     </section>
 
     <!-- ===================== -->
-    <!-- Catálogos -->
+    <!-- Catálogos             -->
     <!-- ===================== -->
     <section class="panel" id="secCatalogos">
       <div class="grid2" style="grid-template-columns: 1fr 1fr;">
+
+        <!-- Fincas -->
         <section class="panel">
           <h2>Fincas</h2>
-
           <div class="filters" style="grid-template-columns: 1fr 140px;">
             <label>Nombre
               <input id="newFincaNombre" type="text" placeholder="Bogaert" />
             </label>
             <button id="btnCreateFinca" class="btn">Crear</button>
           </div>
-
           <div class="tableWrap" style="margin-top:10px;">
             <table class="table" id="fTbl">
               <thead>
@@ -75,13 +75,12 @@
               <tbody></tbody>
             </table>
           </div>
-
           <div class="hint">Borrar fincas solo estará habilitado para owner.</div>
         </section>
 
+        <!-- Bloques -->
         <section class="panel">
           <h2>Bloques</h2>
-
           <div class="filters" style="grid-template-columns: 1fr 1fr 140px;">
             <label>Finca
               <select id="newBloqueFinca"></select>
@@ -101,7 +100,6 @@
               <input id="newBloqueMuestreo" type="number" min="0" />
             </label>
           </div>
-
           <div class="tableWrap" style="margin-top:10px;">
             <table class="table" id="bTbl">
               <thead>
@@ -118,11 +116,52 @@
               <tbody></tbody>
             </table>
           </div>
-
           <div class="hint">Borrar bloques solo estará habilitado para owner.</div>
         </section>
+
       </div>
 
+      <!-- ── NUEVO: Técnicos ──────────────────────────────────────────────────
+           Fuente de verdad para los <select id="tecnico"> en monitoreo y control.
+           Sin este catálogo, agregar un técnico nuevo requiere editar código.
+           admin.js debe exponer fetchTecnicos() que consumen monitoreo y control.
+      ─────────────────────────────────────────────────────────────────────── -->
+      <section class="panel">
+        <h2>Técnicos</h2>
+        <p class="hint">
+          Los técnicos registrados aquí aparecen como opciones en los formularios de
+          monitoreo y control. Editar un nombre aquí actualiza todas las referencias futuras.
+        </p>
+        <div class="filters" style="grid-template-columns: 1fr 1fr 140px; align-items:end;">
+          <label>Nombre completo
+            <input id="newTecnicoNombre" type="text" placeholder="Ej: Addyl Jiménez" />
+          </label>
+          <label>Rol / cargo
+            <input id="newTecnicoRol" type="text" placeholder="Ej: Técnico de campo" />
+          </label>
+          <button id="btnCreateTecnico" class="btn">Agregar</button>
+        </div>
+        <div class="tableWrap" style="margin-top:10px;">
+          <table class="table" id="tTbl">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Rol</th>
+                <th>Activo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="hint">
+          Desactivar un técnico lo oculta de los formularios pero conserva sus registros históricos.
+          Borrar permanente solo habilitado para owner.
+        </div>
+      </section>
+
+      <!-- GeoJSON -->
       <section class="panel">
         <h2>GeoJSON por finca</h2>
         <div class="filters" style="grid-template-columns: 1fr 140px;">
@@ -131,22 +170,21 @@
           </label>
           <button id="btnSaveGeojson" class="btn">Guardar GeoJSON</button>
         </div>
-
         <label style="margin-top:10px;">
           GeoJSON (pega un Feature/Polygon válido)
           <textarea id="geojsonText" rows="10" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.06); color:#e7eefc;"></textarea>
         </label>
-        <div class="hint">Sugerencia: guarda 1 Feature por finca y que `properties.name` coincida con el nombre.</div>
+        <div class="hint">Sugerencia: guarda 1 Feature por finca y que <code>properties.name</code> coincida con el nombre.</div>
       </section>
+
     </section>
 
     <!-- ===================== -->
-    <!-- Cargas (uploads) -->
+    <!-- Cargas (uploads)      -->
     <!-- ===================== -->
     <section class="panel" id="secCargas" style="display:none;">
       <h2>Historial de cargas</h2>
       <div class="hint">Eliminar una carga borra los monitoreos asociados mediante RPC delete_upload.</div>
-
       <div class="tableWrap" style="margin-top:10px;">
         <table class="table" id="uTbl">
           <thead>
@@ -166,6 +204,7 @@
         </table>
       </div>
     </section>
+
   </main>
 
   <script type="module" src="assets/js/admin.js"></script>
