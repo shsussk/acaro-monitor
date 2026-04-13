@@ -26,13 +26,11 @@ export async function fetchBloquesByFinca(finca_id) {
 }
 
 // ── TÉCNICOS ──────────────────────────────────────────────────────────────────
-// NUEVO: fuente de verdad para los <select id="tecnico"> en monitoreo,
-// control y dashboard. Admin gestiona el catálogo; aquí solo se leen activos.
 
 export async function fetchTecnicos() {
   const { data, error } = await supabase
     .from("tecnicos")
-    .select("id,nombre,rol")
+    .select("id,nombre")          // ← corregido: sin columna rol (no existe)
     .eq("activo", true)
     .order("nombre", { ascending: true });
   if (error) throw error;
@@ -40,8 +38,6 @@ export async function fetchTecnicos() {
 }
 
 // ── MONITOREOS ────────────────────────────────────────────────────────────────
-// CAMBIO: lat,lon eliminados del select — coordenadas removidas del sistema.
-// CAMBIO: tecnico se filtra con eq (valor exacto del select) en vez de ilike.
 
 export async function upsertMonitoreos(rows) {
   const { error } = await supabase
@@ -88,8 +84,6 @@ export async function fetchMonitoreosAll(filters, { limit = 10000 } = {}) {
   return data || [];
 }
 
-// CAMBIO: tecnico usa eq (match exacto) porque viene de un <select>,
-// no de texto libre que requería búsqueda parcial con ilike.
 function applyMonitoreoFilters(q, f) {
   if (f?.dateFrom)  q = q.gte("fecha",     f.dateFrom);
   if (f?.dateTo)    q = q.lte("fecha",     f.dateTo);
@@ -100,9 +94,6 @@ function applyMonitoreoFilters(q, f) {
 }
 
 // ── APLICACIONES DE CONTROL ───────────────────────────────────────────────────
-// CAMBIO: plaga_objetivo añadido al select y a los filtros.
-// Necesario para filtrar solo aplicaciones de ácaro en reports.js
-// (gráfico Severidad vs. Control y cálculo de días sin control).
 
 export async function fetchAplicaciones(filters = {}) {
   let q = supabase
@@ -113,9 +104,9 @@ export async function fetchAplicaciones(filters = {}) {
     )
     .order("fecha_aplicacion", { ascending: false });
 
-  if (filters.finca_id)  q = q.eq("finca_id",        filters.finca_id);
-  if (filters.bloque_id) q = q.eq("bloque_id",       filters.bloque_id);
-  if (filters.plaga)     q = q.eq("plaga_objetivo",  filters.plaga);
+  if (filters.finca_id)  q = q.eq("finca_id",          filters.finca_id);
+  if (filters.bloque_id) q = q.eq("bloque_id",         filters.bloque_id);
+  if (filters.plaga)     q = q.eq("plaga_objetivo",    filters.plaga);
   if (filters.dateFrom)  q = q.gte("fecha_aplicacion", filters.dateFrom);
   if (filters.dateTo)    q = q.lte("fecha_aplicacion", filters.dateTo);
 
@@ -137,12 +128,6 @@ export async function deleteAplicacion(id) {
   if (error) throw error;
 }
 
-// CAMBIO: parámetro `plaga` añadido, por defecto "acaro".
-// Una aplicación contra Diaphorina NO debe reiniciar el contador de días
-// sin control de ácaro. Sin este filtro, un bloque puede aparecer como
-// "controlado" cuando en realidad el ácaro no fue tratado.
-// Incluye "multiple" porque esas aplicaciones también cubren ácaro.
-// Llamadores que necesiten todas las plagas pasan plaga = null.
 export async function fetchUltimaAplicacionPorBloque(finca_id = null, plaga = "acaro") {
   let q = supabase
     .from("aplicaciones_control")
@@ -162,9 +147,6 @@ export async function fetchUltimaAplicacionPorBloque(finca_id = null, plaga = "a
   for (const row of (data || [])) {
     const key = row.bloque_id ?? `finca_${row.finca_id}`;
     if (!map[key]) {
-      // Parseo explícito sin zona horaria para evitar desfases de ±1 día
-      // (new Date("2026-03-15") se interpreta como UTC medianoche,
-      //  lo que en UTC-4 da el día anterior)
       const [yr, mo, dy] = row.fecha_aplicacion.split("-").map(Number);
       const dt   = new Date(yr, mo - 1, dy);
       const dias = Math.floor((today - dt) / (1000 * 60 * 60 * 24));
