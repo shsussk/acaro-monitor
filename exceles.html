@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ácaros | Cargar Excel/CSV</title>
-
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
@@ -14,6 +13,7 @@
       <a href="index.html">Dashboard</a>
       <a class="active" href="exceles.html">Cargar Excel/CSV</a>
       <a href="informes.html">Informes</a>
+      <a href="control.html">Control</a>
       <a href="admin.html">Admin</a>
     </nav>
   </header>
@@ -37,7 +37,6 @@
         <div id="progressBar" class="progressBar"></div>
       </div>
       <div id="progressText" class="muted">0%</div>
-
       <div id="uploadSummary" class="status"></div>
 
       <h2>Errores (filas omitidas)</h2>
@@ -54,8 +53,20 @@
         </table>
       </div>
 
+      <!-- CAMBIO: hint actualizado.
+           Antes decía "Lat/Latitud, Lon/Longitud" como columnas mínimas — coordenadas
+           fueron removidas del sistema. Antes usaba nombres genéricos que no coinciden
+           con los nombres reales del archivo de campo (Epicollect5).
+           Hojas_adultas es la columna más crítica porque es la que alimenta todos
+           los cálculos de severidad en informes y el gráfico de tendencia. -->
       <div class="hint" style="margin-top:10px;">
-        Columnas mínimas: Fecha, Finca, Lat/Latitud, Lon/Longitud. Opcionales: Técnico, Brotes, Hojas, Limones, Botones, Yemas, Bloque.
+        <strong>Columnas requeridas:</strong> <code>Fecha</code>, <code>Finca</code>.<br>
+        <strong>Columna principal para análisis:</strong> <code>Hojas_adultas</code> (valores 0–12).<br>
+        <strong>Columnas opcionales:</strong> <code>Bloque</code>, <code>Técnico</code>,
+        <code>Brotes_hojas</code>, <code>Brotes_limones</code>, <code>Botones_florales</code>,
+        <code>Yemas</code>, <code>Observaciones</code>.<br>
+        Todos los valores numéricos representan hojas afectadas sobre 12 evaluadas por estructura.
+        Filas sin <code>Fecha</code> o <code>Finca</code> serán omitidas y listadas en la tabla de errores.
       </div>
 
       <hr style="border:none; border-top:1px solid rgba(255,255,255,.10); margin:16px 0;">
@@ -65,7 +76,6 @@
         <button id="btnReloadUploads" class="btn btnLight">Actualizar historial</button>
         <div class="muted">Puedes eliminar una carga completa (borra sus monitoreos asociados).</div>
       </div>
-
       <div class="tableWrap" style="margin-top:10px;">
         <table class="table" id="uploadTbl">
           <thead>
@@ -86,11 +96,8 @@
     </section>
   </main>
 
-  <!-- CSV -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <!-- XLSX -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
   <script type="module" src="assets/js/uploader.js"></script>
 </body>
 </html>
