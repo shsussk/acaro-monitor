@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient.js";
 import {
   fetchFincas,
   fetchBloquesByFinca,
-  fetchTecnicos,        // ← nuevo
+  fetchTecnicos,
   upsertMonitoreos
 } from "./data.js";
 import {
@@ -19,12 +19,10 @@ import {
 const STORAGE_ENABLED = false;
 const STORAGE_BUCKET  = "uploads";
 
-let fincas          = [];
-let fincaByNormName = new Map();
-let bloquesByFinca  = new Map();
-
-// ← nuevo: catálogo de técnicos activos
-let tecnicoByNormName = new Map(); // normName -> tecnico.nombre (valor canónico)
+let fincas            = [];
+let fincaByNormName   = new Map();
+let bloquesByFinca    = new Map();
+let tecnicoByNormName = new Map();
 
 let selectedFile = null;
 
@@ -91,7 +89,7 @@ async function loadCatalogs() {
     bloquesByFinca.set(f.id, map);
   }
 
-  // ← nuevo: técnicos activos
+  // Técnicos activos (solo para normalizar nombres si coinciden)
   tecnicoByNormName.clear();
   const tecnicos = await fetchTecnicos();
   for (const t of tecnicos) {
@@ -281,11 +279,10 @@ function parseXLSX(file) {
     reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
     reader.onload  = () => {
       try {
-        const data     = new Uint8Array(reader.result);
-        const wb       = XLSX.read(data, { type: "array" });
-        const ws       = wb.Sheets[wb.SheetNames[0]];
-        const json     = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        resolve(json);
+        const data = new Uint8Array(reader.result);
+        const wb   = XLSX.read(data, { type: "array" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        resolve(XLSX.utils.sheet_to_json(ws, { defval: "" }));
       } catch (e) { reject(e); }
     };
     reader.readAsArrayBuffer(file);
@@ -296,8 +293,7 @@ function pick(obj, keys) {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
   }
-  const entries = Object.entries(obj);
-  for (const [kk, vv] of entries) {
+  for (const [kk, vv] of Object.entries(obj)) {
     const nk = normalizeText(kk);
     for (const k of keys) {
       if (nk === normalizeText(k)) return vv;
@@ -319,12 +315,12 @@ async function normalizeAndValidate(rawRows) {
     const bloqueRaw = pick(r, ["Bloque", "BLOQUE", "Block", "BLOCK"]);
     const tecnicoRaw = pick(r, ["Técnico", "Tecnico", "TECNICO", "Tecnico/a", "Technician"]);
 
-    const brotesHojasRaw   = pick(r, ["BrotesHojas",   "Brotes hojas",   "brotes_hojas",   "Brotes"]);
-    const hojasRaw         = pick(r, ["HojasAdultas",  "Hojas adultas",  "hojas_adultas",  "Hojas"]);
-    const brotesLimonesRaw = pick(r, ["BrotesLimones", "Brotes limones", "brotes_limones", "Limones"]);
+    const brotesHojasRaw   = pick(r, ["BrotesHojas",    "Brotes hojas",    "brotes_hojas",    "Brotes"]);
+    const hojasRaw         = pick(r, ["HojasAdultas",   "Hojas adultas",   "hojas_adultas",   "Hojas"]);
+    const brotesLimonesRaw = pick(r, ["BrotesLimones",  "Brotes limones",  "brotes_limones",  "Limones"]);
     const botonesRaw       = pick(r, ["BotonesFlorales","Botones florales","botones_florales","Botones"]);
 
-    // Fecha
+    // Fecha — único campo realmente obligatorio junto a finca
     const fecha = parseDateFlexible(fechaRaw);
     if (!fecha || !isValidISODate(fecha)) {
       errors.push({ rowNum, reason: "Fecha inválida", data: String(fechaRaw ?? "") });
@@ -355,40 +351,26 @@ async function normalizeAndValidate(rawRows) {
       }
     }
 
-    // ← CAMBIO: técnico validado contra catálogo
+    // Técnico — si coincide con el catálogo usa el nombre canónico,
+    // si no coincide lo guarda tal como viene sin advertencia ni rechazo
     let tecnico = null;
     const tecnicoStr = String(tecnicoRaw ?? "").trim();
     if (tecnicoStr) {
       const norm = normalizeText(tecnicoStr);
-      if (tecnicoByNormName.has(norm)) {
-        tecnico = tecnicoByNormName.get(norm); // nombre canónico del catálogo
-      } else {
-        // No rechaza la fila — guarda el nombre como viene y lo marca como advertencia
-        tecnico = tecnicoStr;
-        errors.push({
-          rowNum,
-          reason: `Técnico "${tecnicoStr}" no está en el catálogo — se guarda tal como viene`,
-          data:   tecnicoStr
-        });
-        // No hace `continue`: la fila es válida, solo se advierte
-      }
+      tecnico = tecnicoByNormName.has(norm)
+        ? tecnicoByNormName.get(norm)
+        : tecnicoStr;
     }
 
-    // ← CAMBIO: lat/lon siempre null (eliminados del sistema)
+    // lat/lon siempre null — eliminados del sistema
     const lat = null;
     const lon = null;
 
-    // ← CAMBIO: fingerprint sin lat/lon — usa ec5_uuid si existe, si no rowNum
+    // Fingerprint: usa ec5_uuid si existe, si no construye clave estable
     const ec5uuid = pick(r, ["ec5_uuid", "EC5_UUID", "uuid", "UUID"]) ?? "";
-    const fingerprint = ec5uuid
+    const fingerprint = String(ec5uuid).trim()
       ? String(ec5uuid).trim()
-      : [
-          fecha,
-          finca.id,
-          bloque_id ?? "",
-          normalizeText(tecnico ?? ""),
-          rowNum,
-        ].join("|");
+      : [fecha, finca.id, bloque_id ?? "", normalizeText(tecnico ?? ""), rowNum].join("|");
 
     valid.push({
       fecha,
