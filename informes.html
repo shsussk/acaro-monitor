@@ -44,47 +44,64 @@
         <button id="btnExportPDF" class="btn">Generar Informe Semanal (PDF)</button>
       </div>
       <div class="kpis">
-        <div class="kpi"><div class="kpiLabel">Registros</div><div id="kpiReg" class="kpiValue">-</div></div>
-        <div class="kpi"><div class="kpiLabel">Severidad promedio</div><div id="kpiSev" class="kpiValue">-</div></div>
-        <div class="kpi"><div class="kpiLabel">Bloques sin control &gt;21d</div><div id="kpiAlert" class="kpiValue" style="color:#ff4d6d">-</div></div>
+        <div class="kpi">
+          <div class="kpiLabel">Registros</div>
+          <div id="kpiReg" class="kpiValue">-</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Severidad pob. hojas adultas</div>
+          <div id="kpiSev" class="kpiValue">-</div>
+        </div>
+        <div class="kpi">
+          <div class="kpiLabel">Bloques críticos</div>
+          <div id="kpiAlert" class="kpiValue" style="color:#ff4d6d">-</div>
+        </div>
       </div>
     </section>
 
     <section class="grid2">
 
-      <!-- Tendencia diaria -->
+      <!-- Tendencia semanal -->
       <section class="panel">
-        <h2>Tendencia de severidad (promedio diario)</h2>
+        <h2>Tendencia de severidad (semanal)</h2>
+        <p class="hint">Severidad poblacional de hojas adultas por semana. Las líneas de referencia indican los umbrales de alerta (25%), intervención (42%) y crítico (67%).</p>
         <canvas id="trendChart" height="120"></canvas>
       </section>
 
       <!-- Severidad por finca -->
       <section class="panel">
-        <h2>Severidad promedio por finca (desglose por órgano)</h2>
+        <h2>Severidad promedio por finca (desglose por estructura)</h2>
+        <p class="hint">Proporción agrupada por estructura evaluada. Solo se grafica cuando hay ≥3 registros con dato para esa estructura.</p>
         <canvas id="fincaChart" height="120"></canvas>
       </section>
 
-      <!-- ── NUEVO: Comparación severidad vs. aplicaciones ── -->
+      <!-- Comparación severidad vs. aplicaciones -->
       <section class="panel" style="grid-column: 1 / -1;">
         <h2>Severidad vs. Aplicaciones de control</h2>
-        <p class="hint">Línea = severidad promedio diaria. Barras verticales = fechas de aplicación de control.</p>
+        <p class="hint">Línea = severidad poblacional semanal de hojas adultas. Barras = número de aplicaciones de control registradas esa semana.</p>
         <canvas id="controlChart" height="100"></canvas>
       </section>
 
-      <!-- ── NUEVO: Bloques críticos ── -->
+      <!-- Bloques críticos -->
       <section class="panel" style="grid-column: 1 / -1;">
-        <h2>🚨 Bloques críticos (alta severidad + sin control reciente)</h2>
-        <p class="hint">Bloques con severidad promedio ≥33% y más de 21 días sin aplicación registrada.</p>
+        <h2>🚨 Bloques críticos</h2>
+        <p class="hint">
+          Un bloque se marca como crítico si cumple al menos uno de estos criterios:
+          (1) severidad ≥42% y sin aplicación en más de 21 días,
+          (2) ≥30% de plantas con severidad ≥42% en el período,
+          (3) ≥15% de plantas en nivel crítico (≥67%).
+        </p>
         <div class="tableWrap">
           <table class="table" id="criticalTbl">
             <thead>
               <tr>
                 <th>Finca</th>
                 <th>Bloque</th>
-                <th>Sev% prom.</th>
-                <th>Registros</th>
+                <th>Sev% HA</th>
+                <th>N muestras</th>
                 <th>Última aplicación</th>
                 <th>Días sin control</th>
+                <th>Motivo</th>
                 <th>Acción recomendada</th>
               </tr>
             </thead>
@@ -95,12 +112,18 @@
 
       <!-- Top 5 más severos -->
       <section class="panel">
-        <h2>Top 5 puntos más severos</h2>
+        <h2>Top 5 registros más severos</h2>
+        <p class="hint">Ordenados por severidad de hojas adultas (estructura principal).</p>
         <div class="tableWrap">
           <table class="table" id="topTbl">
             <thead>
               <tr>
-                <th>Fecha</th><th>Finca</th><th>Bloque</th><th>Sev%</th><th>Lat</th><th>Lon</th>
+                <th>Fecha</th>
+                <th>Finca</th>
+                <th>Bloque</th>
+                <th>Sev% HA</th>
+                <th>Nivel</th>
+                <th>Detalle</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -110,12 +133,19 @@
 
       <!-- Priorización -->
       <section class="panel">
-        <h2>Priorización de campos a aplicar</h2>
+        <h2>Priorización de campos a intervenir</h2>
+        <p class="hint">Ordenado por severidad poblacional de hojas adultas. Se incluye el % de plantas sobre umbral de intervención (42%) como criterio complementario.</p>
         <div class="tableWrap">
           <table class="table" id="prioTbl">
             <thead>
               <tr>
-                <th>Prioridad</th><th>Finca</th><th>Bloque</th><th>Sev% Promedio</th><th>Registros</th><th>Acción</th>
+                <th>#</th>
+                <th>Finca</th>
+                <th>Bloque</th>
+                <th>Sev% HA</th>
+                <th>N muestras</th>
+                <th>% plantas ≥42%</th>
+                <th>Acción</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -125,12 +155,24 @@
 
       <!-- Resumen por finca/bloque -->
       <section class="panel" style="grid-column: 1 / -1;">
-        <h2>Resumen por finca/bloque</h2>
+        <h2>Resumen por finca / bloque</h2>
+        <p class="hint">
+          Severidad poblacional por estructura. HA = Hojas adultas (principal) · BH = Brotes hojas · FR = Frutos · BF = Botones florales.
+          Las estructuras muestran "—" cuando no hay dato suficiente para el período seleccionado.
+        </p>
         <div class="tableWrap">
           <table class="table" id="sumTbl">
             <thead>
               <tr>
-                <th>Finca</th><th>Bloque</th><th>Registros</th><th>Sev% prom</th>
+                <th>Finca</th>
+                <th>Bloque</th>
+                <th>N muestras</th>
+                <th>Sev% HA</th>
+                <th>Sev% BH</th>
+                <th>Sev% FR</th>
+                <th>Sev% BF</th>
+                <th>% plantas ≥42%</th>
+                <th>Nivel</th>
               </tr>
             </thead>
             <tbody></tbody>
