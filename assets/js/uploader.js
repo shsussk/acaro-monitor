@@ -1,36 +1,51 @@
+// assets/js/uploader.js
 import { requireAuth } from "./authGuard.js";
 import { supabase } from "./supabaseClient.js";
-import { fetchFincas, fetchBloquesByFinca, upsertMonitoreos } from "./data.js";
-import { normalizeText, parseDateFlexible, isValidISODate, toFloat, toInt, chunk } from "./utils.js";
+import {
+  fetchFincas,
+  fetchBloquesByFinca,
+  fetchTecnicos,        // ← nuevo
+  upsertMonitoreos
+} from "./data.js";
+import {
+  normalizeText,
+  parseDateFlexible,
+  isValidISODate,
+  toFloat,
+  toInt,
+  chunk
+} from "./utils.js";
 
-// ====== OPCIONAL: guardar archivo original en Storage ======
-const STORAGE_ENABLED = false;         // <-- pon true si quieres guardar el XLSX/CSV en Supabase Storage
-const STORAGE_BUCKET = "uploads";      // <-- crea este bucket en Supabase si STORAGE_ENABLED=true
+const STORAGE_ENABLED = false;
+const STORAGE_BUCKET  = "uploads";
 
-let fincas = [];
+let fincas          = [];
 let fincaByNormName = new Map();
-let bloquesByFinca = new Map(); // finca_id -> Map(normBloqueName -> bloque_id)
+let bloquesByFinca  = new Map();
+
+// ← nuevo: catálogo de técnicos activos
+let tecnicoByNormName = new Map(); // normName -> tecnico.nombre (valor canónico)
 
 let selectedFile = null;
 
 init();
 
 async function init() {
-  await requireAuth(); // si no hay sesión, redirige al login [web:81]
+  await requireAuth();
   setupDropzone();
   await loadCatalogs();
   await loadUploadHistory();
-
-  document.getElementById("btnReloadUploads")?.addEventListener("click", loadUploadHistory);
+  document.getElementById("btnReloadUploads")
+    ?.addEventListener("click", loadUploadHistory);
 }
 
 function setupDropzone() {
-  const dz = document.getElementById("dropzone");
-  const fi = document.getElementById("fileInput");
+  const dz  = document.getElementById("dropzone");
+  const fi  = document.getElementById("fileInput");
   const btn = document.getElementById("btnProcess");
 
-  dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("drag"); });
-  dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+  dz.addEventListener("dragover",  (e) => { e.preventDefault(); dz.classList.add("drag"); });
+  dz.addEventListener("dragleave", ()  => dz.classList.remove("drag"));
   dz.addEventListener("drop", (e) => {
     e.preventDefault();
     dz.classList.remove("drag");
@@ -50,37 +65,40 @@ function setupDropzone() {
 function setFile(file) {
   selectedFile = file;
   document.getElementById("fileName").textContent = file.name;
-  document.getElementById("btnProcess").disabled = false;
+  document.getElementById("btnProcess").disabled  = false;
   clearErrors();
   setSummary("");
 }
 
 async function loadCatalogs() {
+  // Fincas
   fincas = await fetchFincas();
   fincaByNormName.clear();
-
   for (const f of fincas) {
     fincaByNormName.set(normalizeText(f.nombre), f);
   }
 
-  // precargar bloques por finca (para mapear nombres)
+  // Bloques por finca
   bloquesByFinca.clear();
   for (const f of fincas) {
     const bloques = await fetchBloquesByFinca(f.id);
     const map = new Map();
-
     for (const b of bloques) {
       map.set(normalizeText(b.nombre), b.id);
-
-      // alias: "1" -> "BLOQUE 1"
       const m = String(b.nombre).match(/(\d+)/);
       if (m) map.set(normalizeText(m[1]), b.id);
     }
     bloquesByFinca.set(f.id, map);
   }
+
+  // ← nuevo: técnicos activos
+  tecnicoByNormName.clear();
+  const tecnicos = await fetchTecnicos();
+  for (const t of tecnicos) {
+    tecnicoByNormName.set(normalizeText(t.nombre), t.nombre);
+  }
 }
 
-// Crea una finca si no existe y la agrega al catálogo en memoria
 async function getOrCreateFinca(nombreRaw) {
   const norm = normalizeText(nombreRaw);
   if (fincaByNormName.has(norm)) return fincaByNormName.get(norm);
@@ -100,14 +118,12 @@ async function getOrCreateFinca(nombreRaw) {
   return data;
 }
 
-// Crea un bloque si no existe y lo agrega al catálogo en memoria
 async function getOrCreateBloque(finca, nombreRaw) {
   const norm = normalizeText(nombreRaw);
   const bMap = bloquesByFinca.get(finca.id) ?? new Map();
 
   if (bMap.has(norm)) return bMap.get(norm);
 
-  // alias numérico: "1" -> "Bloque 1"
   const numMatch = String(nombreRaw).match(/(\d+)/);
   if (numMatch && bMap.has(normalizeText(numMatch[1]))) {
     return bMap.get(normalizeText(numMatch[1]));
@@ -133,18 +149,10 @@ async function processAndUpload(file) {
   setProgress(0);
   setSummary("");
 
-  // 1) Confirmar usuario logueado
-  const { data: { user }, error: uerr } = await supabase.auth.getUser(); // [web:81]
-  if (uerr) {
-    setSummary("Error de sesión: " + (uerr.message || uerr));
-    return;
-  }
-  if (!user) {
-    setSummary("Necesitas iniciar sesión para subir archivos.");
-    return;
-  }
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
+  if (uerr) { setSummary("Error de sesión: " + (uerr.message || uerr)); return; }
+  if (!user) { setSummary("Necesitas iniciar sesión para subir archivos."); return; }
 
-  // 2) Crear registro en uploads
   let uploadId = null;
   let filePath = null;
 
@@ -154,43 +162,35 @@ async function processAndUpload(file) {
       .insert({ uploaded_by: user.id, filename: file.name, status: "processing" })
       .select("id")
       .single();
-
     if (e1) throw e1;
     uploadId = up.id;
   } catch (e) {
-    setSummary("No se pudo crear el registro de carga (uploads): " + (e.message || e));
+    setSummary("No se pudo crear el registro de carga: " + (e.message || e));
     return;
   }
 
-  // 3) (Opcional) subir archivo original a Storage y guardar file_path
   if (STORAGE_ENABLED) {
     try {
       const safeName = sanitizeFileName(file.name);
-      const path = `${user.id}/${uploadId}/${Date.now()}_${safeName}`;
-
-      const { error: se } = await supabase
-        .storage
+      const path     = `${user.id}/${uploadId}/${Date.now()}_${safeName}`;
+      const { error: se } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" }); // [web:132]
-
+        .upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
       if (se) throw se;
       filePath = path;
-
       const { error: e2 } = await supabase.from("uploads").update({ file_path: filePath }).eq("id", uploadId);
       if (e2) throw e2;
     } catch (e) {
-      // Si falla Storage, seguimos (pero dejamos nota)
-      await supabase.from("uploads").update({ notes: "Storage upload falló: " + (e.message || e) }).eq("id", uploadId);
+      await supabase.from("uploads")
+        .update({ notes: "Storage upload falló: " + (e.message || e) })
+        .eq("id", uploadId);
     }
   }
 
-  // 4) Parsear archivo
   let rows = [];
-  const ext = file.name.toLowerCase().endsWith(".csv")
-    ? "csv"
-    : file.name.toLowerCase().endsWith(".xlsx")
-      ? "xlsx"
-      : null;
+  const ext = file.name.toLowerCase().endsWith(".csv")  ? "csv"
+            : file.name.toLowerCase().endsWith(".xlsx") ? "xlsx"
+            : null;
 
   if (!ext) {
     await markUploadFailed(uploadId, "Archivo no soportado. Usa .csv o .xlsx");
@@ -206,26 +206,24 @@ async function processAndUpload(file) {
     return;
   }
 
-  // 5) Normalizar/validar
   const { valid, errors } = await normalizeAndValidate(rows);
 
-  // Adjuntar upload_id y uploaded_by a cada fila válida (para trazabilidad y borrado por carga)
   for (const r of valid) {
-    r.upload_id = uploadId;
+    r.upload_id   = uploadId;
     r.uploaded_by = user.id;
   }
 
   renderErrors(errors);
 
-  // 6) Subida por lotes (no bloquea por errores de filas)
   try {
-    await supabase
-      .from("uploads")
+    await supabase.from("uploads")
       .update({ rows_total: rows.length, rows_valid: valid.length, rows_invalid: errors.length })
       .eq("id", uploadId);
 
     if (valid.length === 0) {
-      await supabase.from("uploads").update({ status: "failed", notes: "Cero filas válidas" }).eq("id", uploadId);
+      await supabase.from("uploads")
+        .update({ status: "failed", notes: "Cero filas válidas" })
+        .eq("id", uploadId);
       setSummary("No hay filas válidas para subir.");
       setProgress(0);
       await loadUploadHistory();
@@ -238,8 +236,7 @@ async function processAndUpload(file) {
     for (const b of batches) {
       await upsertMonitoreos(b);
       done += b.length;
-      const pct = Math.round((done / valid.length) * 100);
-      setProgress(pct);
+      setProgress(Math.round((done / valid.length) * 100));
     }
 
     await supabase.from("uploads").update({ status: "done" }).eq("id", uploadId);
@@ -262,8 +259,7 @@ async function processAndUpload(file) {
 }
 
 async function markUploadFailed(uploadId, notes) {
-  await supabase
-    .from("uploads")
+  await supabase.from("uploads")
     .update({ status: "failed", notes: String(notes || "") })
     .eq("id", uploadId);
 }
@@ -271,10 +267,10 @@ async function markUploadFailed(uploadId, notes) {
 function parseCSV(file) {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
-      header: true,
+      header:         true,
       skipEmptyLines: true,
       complete: (res) => resolve(res.data || []),
-      error: (err) => reject(err),
+      error:    (err) => reject(err),
     });
   });
 }
@@ -283,17 +279,14 @@ function parseXLSX(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
-    reader.onload = () => {
+    reader.onload  = () => {
       try {
-        const data = new Uint8Array(reader.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheetName = wb.SheetNames[0];
-        const ws = wb.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        const data     = new Uint8Array(reader.result);
+        const wb       = XLSX.read(data, { type: "array" });
+        const ws       = wb.Sheets[wb.SheetNames[0]];
+        const json     = XLSX.utils.sheet_to_json(ws, { defval: "" });
         resolve(json);
-      } catch (e) {
-        reject(e);
-      }
+      } catch (e) { reject(e); }
     };
     reader.readAsArrayBuffer(file);
   });
@@ -303,7 +296,6 @@ function pick(obj, keys) {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
   }
-  // fallback: buscar por normalización del header
   const entries = Object.entries(obj);
   for (const [kk, vv] of entries) {
     const nk = normalizeText(kk);
@@ -315,33 +307,31 @@ function pick(obj, keys) {
 }
 
 async function normalizeAndValidate(rawRows) {
-  const valid = [];
+  const valid  = [];
   const errors = [];
 
   for (let idx = 0; idx < rawRows.length; idx++) {
-    const r = rawRows[idx];
-    const rowNum = idx + 2; // header fila 1
+    const r      = rawRows[idx];
+    const rowNum = idx + 2;
 
     const fechaRaw  = pick(r, ["Fecha", "FECHA", "date", "DATE"]);
     const fincaRaw  = pick(r, ["Finca", "FINCA", "Farm", "FARM"]);
     const bloqueRaw = pick(r, ["Bloque", "BLOQUE", "Block", "BLOCK"]);
-    const latRaw    = pick(r, ["Lat", "LAT", "Latitud", "LATITUD", "Latitude", "LATITUDE"]);
-    const lonRaw    = pick(r, ["Lon", "LON", "Longitud", "LONGITUD", "Lng", "LNG", "Longitude", "LONGITUDE"]);
+    const tecnicoRaw = pick(r, ["Técnico", "Tecnico", "TECNICO", "Tecnico/a", "Technician"]);
 
-    const tecnicoRaw       = pick(r, ["Técnico", "Tecnico", "TECNICO", "Tecnico/a", "TECNICO/A", "Technician"]);
-    const brotesHojasRaw   = pick(r, ["BrotesHojas", "Brotes hojas", "BROTES_HOJAS", "brotes_hojas", "Brotes", "BROTES"]);
-    const hojasRaw         = pick(r, ["HojasAdultas", "Hojas adultas", "HOJAS_ADULTAS", "hojas_adultas", "Hojas", "HOJAS"]);
-    const brotesLimonesRaw = pick(r, ["BrotesLimones", "Brotes limones", "BROTES_LIMONES", "brotes_limones", "Limones", "LIMONES"]);
-    const botonesRaw       = pick(r, ["BotonesFlorales", "Botones florales", "BOTONES_FLORALES", "botones_florales", "Botones", "BOTONES"]);
+    const brotesHojasRaw   = pick(r, ["BrotesHojas",   "Brotes hojas",   "brotes_hojas",   "Brotes"]);
+    const hojasRaw         = pick(r, ["HojasAdultas",  "Hojas adultas",  "hojas_adultas",  "Hojas"]);
+    const brotesLimonesRaw = pick(r, ["BrotesLimones", "Brotes limones", "brotes_limones", "Limones"]);
+    const botonesRaw       = pick(r, ["BotonesFlorales","Botones florales","botones_florales","Botones"]);
 
-    // Validar fecha
+    // Fecha
     const fecha = parseDateFlexible(fechaRaw);
     if (!fecha || !isValidISODate(fecha)) {
       errors.push({ rowNum, reason: "Fecha inválida", data: String(fechaRaw ?? "") });
       continue;
     }
 
-    // Validar finca (o crearla automáticamente)
+    // Finca
     if (!String(fincaRaw ?? "").trim()) {
       errors.push({ rowNum, reason: "Finca vacía", data: "" });
       continue;
@@ -354,13 +344,7 @@ async function normalizeAndValidate(rawRows) {
       continue;
     }
 
-    // Lat/Lon opcionales: si están vacías se guardan como null
-    const latParsed = toFloat(latRaw);
-    const lonParsed = toFloat(lonRaw);
-    const lat = (Number.isFinite(latParsed) && latParsed >= -90  && latParsed <= 90)  ? latParsed : null;
-    const lon = (Number.isFinite(lonParsed) && lonParsed >= -180 && lonParsed <= 180) ? lonParsed : null;
-
-    // Bloque (o crearlo automáticamente)
+    // Bloque (opcional)
     let bloque_id = null;
     if (String(bloqueRaw ?? "").trim()) {
       try {
@@ -371,33 +355,54 @@ async function normalizeAndValidate(rawRows) {
       }
     }
 
-    const tecnico = String(tecnicoRaw ?? "").trim() || null;
+    // ← CAMBIO: técnico validado contra catálogo
+    let tecnico = null;
+    const tecnicoStr = String(tecnicoRaw ?? "").trim();
+    if (tecnicoStr) {
+      const norm = normalizeText(tecnicoStr);
+      if (tecnicoByNormName.has(norm)) {
+        tecnico = tecnicoByNormName.get(norm); // nombre canónico del catálogo
+      } else {
+        // No rechaza la fila — guarda el nombre como viene y lo marca como advertencia
+        tecnico = tecnicoStr;
+        errors.push({
+          rowNum,
+          reason: `Técnico "${tecnicoStr}" no está en el catálogo — se guarda tal como viene`,
+          data:   tecnicoStr
+        });
+        // No hace `continue`: la fila es válida, solo se advierte
+      }
+    }
 
-    const row = {
+    // ← CAMBIO: lat/lon siempre null (eliminados del sistema)
+    const lat = null;
+    const lon = null;
+
+    // ← CAMBIO: fingerprint sin lat/lon — usa ec5_uuid si existe, si no rowNum
+    const ec5uuid = pick(r, ["ec5_uuid", "EC5_UUID", "uuid", "UUID"]) ?? "";
+    const fingerprint = ec5uuid
+      ? String(ec5uuid).trim()
+      : [
+          fecha,
+          finca.id,
+          bloque_id ?? "",
+          normalizeText(tecnico ?? ""),
+          rowNum,
+        ].join("|");
+
+    valid.push({
       fecha,
-      finca_id: finca.id,
+      finca_id:         finca.id,
       bloque_id,
       lat,
       lon,
       tecnico,
-      brotes_hojas:     Math.max(0, toInt(brotesHojasRaw, 0)),
-      hojas_adultas:    Math.max(0, toInt(hojasRaw, 0)),
+      brotes_hojas:     Math.max(0, toInt(brotesHojasRaw,   0)),
+      hojas_adultas:    Math.max(0, toInt(hojasRaw,         0)),
       brotes_limones:   Math.max(0, toInt(brotesLimonesRaw, 0)),
-      botones_florales: Math.max(0, toInt(botonesRaw, 0)),
-    };
-
-    // fingerprint estable: usa número de fila original del archivo para garantizar unicidad
-    row.fingerprint = [
-      row.fecha,
-      row.finca_id,
-      row.bloque_id ?? "",
-      Number.isFinite(row.lat) ? Number(row.lat).toFixed(6) : "",
-      Number.isFinite(row.lon) ? Number(row.lon).toFixed(6) : "",
-      normalizeText(row.tecnico ?? ""),
-      rowNum,
-    ].join("|");
-
-    valid.push(row);
+      botones_florales: Math.max(0, toInt(botonesRaw,       0)),
+      fingerprint,
+    });
   }
 
   return { valid, errors };
@@ -427,16 +432,16 @@ async function loadUploadHistory() {
       <td>${u.id}</td>
       <td>${formatTs(u.created_at)}</td>
       <td>${escapeHtml(u.filename || "")}</td>
-      <td>${escapeHtml(u.status || "")}</td>
-      <td>${u.rows_total ?? 0}</td>
-      <td>${u.rows_valid ?? 0}</td>
+      <td>${escapeHtml(u.status   || "")}</td>
+      <td>${u.rows_total   ?? 0}</td>
+      <td>${u.rows_valid   ?? 0}</td>
       <td>${u.rows_invalid ?? 0}</td>
       <td>
-        <button class="btn btnLight" data-del-upload="${u.id}" ${u.status === "deleted" ? "disabled" : ""}>
+        <button class="btn btnLight" data-del-upload="${u.id}"
+          ${u.status === "deleted" ? "disabled" : ""}>
           Eliminar
         </button>
-      </td>
-    `;
+      </td>`;
     tbody.appendChild(tr);
   }
 
@@ -450,15 +455,12 @@ async function loadUploadHistory() {
 
 async function deleteUpload(uploadId) {
   if (!confirm(`¿Eliminar la carga ${uploadId}? Esto borrará sus monitoreos asociados.`)) return;
-
   setSummary("Eliminando carga...");
-  const { data, error } = await supabase.rpc("delete_upload", { p_upload_id: uploadId }); // [web:144]
+  const { data, error } = await supabase.rpc("delete_upload", { p_upload_id: uploadId });
   if (error) {
     setSummary("Error eliminando: " + (error.message || error));
     return;
   }
-
-  // data típicamente trae el número de monitoreos borrados (según tu función)
   setSummary(`Carga eliminada. Monitoreos borrados: ${JSON.stringify(data)}`);
   await loadUploadHistory();
 }
@@ -485,7 +487,7 @@ function clearErrors() {
 }
 
 function setProgress(pct) {
-  document.getElementById("progressBar").style.width = `${pct}%`;
+  document.getElementById("progressBar").style.width  = `${pct}%`;
   document.getElementById("progressText").textContent = `${pct}%`;
 }
 
@@ -501,11 +503,8 @@ function escapeHtml(s) {
 }
 
 function formatTs(ts) {
-  try {
-    return new Date(ts).toLocaleString("es-DO");
-  } catch {
-    return String(ts ?? "");
-  }
+  try { return new Date(ts).toLocaleString("es-DO"); }
+  catch { return String(ts ?? ""); }
 }
 
 function sanitizeFileName(name) {
